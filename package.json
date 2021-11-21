@@ -1,0 +1,20 @@
+{ "name": "streamlink-ubuntu-native",
+  "version": "0.1.0",
+  "description": "A crutch to make streamlink run on Ubuntu.",
+  "keywords": [],
+
+  "author": "M.K. (https://github.com/mk-pmb)",
+  "homepage": "https://github.com/mk-pmb/streamlink-ubuntu-native/#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mk-pmb/streamlink-ubuntu-native.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mk-pmb/streamlink-ubuntu-native/issues"
+  },
+  "private": true, "license": "ISC",
+
+
+
+  "npm vs. BOM = Unexpected token": "-*- coding: UTF-8 -*-"
+}
