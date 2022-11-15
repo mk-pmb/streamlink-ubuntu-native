@@ -21,7 +21,10 @@ function sl_wrap () {
 
 
 function sl_core () {
-  export PYTHONPATH="$SL_REPO/src:$SELFPATH/shims"
+  local PYPA="$SL_REPO/src"
+  PYPA+=":$SELFPATH/shims"
+  PYPA+=":$SELFPATH/upgrades/lib"
+  export PYTHONPATH="$PYPA"
   python3 -m streamlink_cli "$@" || return $?
 }
 
