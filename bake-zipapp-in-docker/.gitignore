@@ -1,0 +1,11 @@
+
+# Local config and symlinks:
+/*.@*
+
+
+# Auto-generated files:
+/docker.tmp
+
+
+
+# Unsorted stuff (this section should be empty):
