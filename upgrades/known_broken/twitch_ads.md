@@ -28,6 +28,14 @@ Using Ubuntu focal's ancient libraries
     It was high-pitched and with a short gap about every second.
     My speculation for why this happened is that the loading screen uses
     another codec than the steamer and VLC doesn't understand the hand-over.
+  * Update 2023-11-01:
+    Nowadays most streams I watch work without noticeable pitch shift.
+    The stream discontinuities introduced by ad breaks confuse VLC's video
+    position slider and its seek mechanism. One way to fix them in a recorded
+    file is to convert it in `ffmpeg` with `copy` codec, thus only rewriting
+    the container.
+    The script `util/twitch_fix_stream_discontinuity.sh` simplifies that.
+
 
 
 
