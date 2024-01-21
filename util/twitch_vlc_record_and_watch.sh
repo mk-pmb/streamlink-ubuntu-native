@@ -213,7 +213,7 @@ function twrec_rec_core () {
   local VLC_PID=$!
   [ "$DBGLV" -lt 2 ] || echo "D: VLC pid: $VLC_PID" >&2
 
-  xdolurk_drive_down_volume &
+  xdolurk_all &
 
   local HAD_ANY_MEDIA_BYTES=
   local PIPE_CMD='"${SL_CMD[@]}"'
@@ -437,6 +437,45 @@ function read_channel_oauth_token () {
 }
 
 
+function find_vlc_window () {
+  [ "${VLC_PID:-0}" -ge 1 ] || return 4$(echo E: >&2 $FUNCNAME: \
+    "Expected VLC_PID to be a positive number, not '$VLC_PID'.")
+  local TIMEOUT_SEC=5
+  # echo D: $FUNCNAME: "Trying to find VLC window: PID $VLC_PID" >&2
+  local VLC_WIN_ID="$(xdocool find_winid_by_pid "$VLC_PID" "$TIMEOUT_SEC")"
+  [ -n "$VLC_WIN_ID" ] || return 4$(echo E: >&2 $FUNCNAME: \
+    "Failed to find window ID for PID '$VLC_PID'.")
+  # echo D: $FUNCNAME: "Found VLC window: ID $VLC_WIN_ID" >&2
+  echo "$VLC_WIN_ID"
+}
+
+
+function xdolurk_all () {
+  local VLC_WIN_ID="$(find_vlc_window)"
+  xdolurk_undisturb || return $?
+  xdolurk_drive_down_volume || return $?
+}
+
+
+function xdolurk_undisturb () {
+  # The idea of "undisturb" orininally was to minimize the new VLC window
+  # so users can continue doing their stuff while waiting for the stream
+  # to load. However, this won't achieve the desired effect, because VLC
+  # will raise itself once the stream starts, interrupting the user's work
+  # even worse. Also, when it was initially maximized and then raises itself,
+  # it unmaximizes itself.
+  # As a work-around, we hide the VLC window, check which other window was
+  # active, then unhide VLC (i.e. restore its window to a state it deems
+  # acceptable), then switch back to the previously active window.
+  xdotool windowunmap --sync "$VLC_WIN_ID" || return $?
+  sleep 0.1s
+  local PREV_WIN="$(xdotool getactivewindow)"
+  xdotool windowmap --sync "$VLC_WIN_ID" || return $?
+  sleep 0.1s
+  xdotool windowactivate "$PREV_WIN" || return $?
+}
+
+
 function xdolurk_drive_down_volume () {
   # We want all streams to start mute, so users can safely do other things
   # while waiting for the stream to start, and then later increase volume
@@ -460,15 +499,7 @@ function xdolurk_drive_down_volume () {
   #   quickly that it's basically immediate.
   local KEY="${CFG[vlc_volume_down_key]}"
   [ -n "$KEY" ] || return 0
-  [ "${VLC_PID:-0}" -ge 1 ] || return 4$(echo E: >&2 $FUNCNAME: \
-    "Expected VLC_PID to be a positive number, not '$VLC_PID'.")
-  local TIMEOUT_SEC=5
-  # echo D: $FUNCNAME: "Trying to find VLC window: PID $VLC_PID" >&2
-  local WIN_ID="$(xdocool find_winid_by_pid "$VLC_PID" "$TIMEOUT_SEC")"
-  [ -n "$WIN_ID" ] || return 4$(echo E: >&2 $FUNCNAME: \
-    "Failed to find window ID for PID '$VLC_PID'.")
-  # echo D: $FUNCNAME: "Found VLC window: ID $WIN_ID" >&2
-  xdotool key --window "$WIN_ID" --delay 20 $(str_repeat 50 "$KEY ")
+  xdotool key --window "$VLC_WIN_ID" --delay 20 $(str_repeat 50 "$KEY ")
   # echo D: $FUNCNAME: "Keys sent." >&2
 }
 
