@@ -39,6 +39,12 @@ function video_codec_fix_twitch () {
         # NB: The "avc1" does not mean the video codec.
         echo "D: skip file that looks like it was encoded using ffmpeg: $ITEM"
         continue;;
+
+      ...?ftypmp42....isommp42* | \
+      __looks_like_youtube_encoded__ )
+        echo "D: skip file that looks like it was encoded by YouTube: $ITEM"
+        continue;;
+
     esac
 
     VAL="$(quick_cheap_fuser "$ITEM")" || return $?
