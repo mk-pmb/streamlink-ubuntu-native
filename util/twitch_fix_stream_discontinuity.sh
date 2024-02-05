@@ -29,6 +29,7 @@ function video_codec_fix_twitch () {
       *"$SEMISUF" ) echo "D: skip '*$SEMISUF' file: $ITEM"; continue;;
       *"$ORIGSUF".* ) echo "D: skip '*$ORIGSUF.*' file: $ITEM"; continue;;
     esac
+    BFN+="$ORIGSUF"
 
     VAL="$(head --bytes=64 -- "$ITEM" | tr '\0' .)"
     case "$VAL" in
@@ -39,8 +40,6 @@ function video_codec_fix_twitch () {
         echo "D: skip file that looks like it was encoded using ffmpeg: $ITEM"
         continue;;
     esac
-
-    BFN+="$ORIGSUF"
 
     VAL="$(quick_cheap_fuser "$ITEM")" || return $?
     [ -z "$VAL" ] || continue$(echo W: >&2 \
