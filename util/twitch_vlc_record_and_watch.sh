@@ -467,12 +467,14 @@ function xdolurk_undisturb () {
   # As a work-around, we hide the VLC window, check which other window was
   # active, then unhide VLC (i.e. restore its window to a state it deems
   # acceptable), then switch back to the previously active window.
+  local WM_DELAY='0.5s'
   xdotool windowunmap --sync "$VLC_WIN_ID" || return $?
-  sleep 0.1s
+  sleep "$WM_DELAY"
   local PREV_WIN="$(xdotool getactivewindow)"
   xdotool windowmap --sync "$VLC_WIN_ID" || return $?
-  sleep 0.1s
-  xdotool windowactivate "$PREV_WIN" || return $?
+  sleep "$WM_DELAY"
+  xdotool windowactivate "$PREV_WIN" windowraise "$PREV_WIN" || return $?
+  sleep "$WM_DELAY"
 }
 
 
@@ -499,7 +501,20 @@ function xdolurk_drive_down_volume () {
   #   quickly that it's basically immediate.
   local KEY="${CFG[vlc_volume_down_key]}"
   [ -n "$KEY" ] || return 0
-  xdotool key --window "$VLC_WIN_ID" --delay 20 $(str_repeat 50 "$KEY ")
+
+  xdotool keydown --window "$VLC_WIN_ID" "$KEY"
+  # Earlier versions used to send a specific number of keystrokes.
+  # However, xdotool's --window option was rather unreliable.
+  # It seems like sometimes one of the keydown events thereof was mistakenly
+  # sent to the terminal window from which I had started this script, causing
+  # the shell to echo lots of `^[[B` until another key was pressed, thereby
+  # obfuscating the script output when left unattended. (And unattended use
+  # is the major goal of this function.)
+  # Let's hope that sending just one keydown event increases our chance of
+  # targeting the VLC window.
+
+  sleep 3s
+  xdotool keyup --window "$VLC_WIN_ID" "$KEY"
   # echo D: $FUNCNAME: "Keys sent." >&2
 }
 
