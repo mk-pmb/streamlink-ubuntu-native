@@ -51,13 +51,13 @@ function video_codec_fix_twitch () {
     [ -z "$VAL" ] || continue$(echo W: >&2 \
       "skip: probably in use by PID ${VAL//$'\n'/, }: $ITEM")
 
-    for VAL in wip done; do
+    for VAL in done wip ; do
+      # ^- Set 'wip' last so we can use VAL after loop.
       VAL="$BFN.$VAL.$SUF"
       [ -e "$VAL" ] || continue
       echo E: "File already exists: $VAL" >&2
       return 4
     done
-    VAL="$BFN.wip.$SUF"
     $MV "$ITEM" "$VAL" || return $?
     ffmpeg -i "$VAL" -c copy "$ITEM" || return $?
     $MV "$VAL" "$BFN.done.$SUF" || return $?
