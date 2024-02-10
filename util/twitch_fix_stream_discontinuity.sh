@@ -23,11 +23,11 @@ function video_codec_fix_twitch () {
       [0-9]:*[^a-z0-9]* ) SUF='!character(s)';;
     esac
     [ "${SUF:0:1}" != '!' ] || return 3$(
-      echo "E: Unsupported suffix: Unexpected ${SUF:1}: $ITEM" >&2)
+      echo E: "Unsupported suffix: Unexpected ${SUF:1}: $ITEM" >&2)
     local BFN="${ITEM%.$SUF}"
     case "$BFN" in
-      *"$SEMISUF" ) echo "D: skip '*$SEMISUF' file: $ITEM"; continue;;
-      *"$ORIGSUF".* ) echo "D: skip '*$ORIGSUF.*' file: $ITEM"; continue;;
+      *"$SEMISUF" ) echo D: skip "'*$SEMISUF' file: $ITEM"; continue;;
+      *"$ORIGSUF".* ) echo D: skip "'*$ORIGSUF.*' file: $ITEM"; continue;;
     esac
     BFN+="$ORIGSUF"
 
@@ -37,12 +37,12 @@ function video_codec_fix_twitch () {
       *'isomiso2avc1mp41'* | \
       __looks_like_ffmpeg_reencoded__ )
         # NB: The "avc1" does not mean the video codec.
-        echo "D: skip file that looks like it was encoded using ffmpeg: $ITEM"
+        echo D: skip "file that looks like it was encoded using ffmpeg: $ITEM"
         continue;;
 
       ...?ftypmp42....isommp42* | \
       __looks_like_youtube_encoded__ )
-        echo "D: skip file that looks like it was encoded by YouTube: $ITEM"
+        echo D: skip "file that looks like it was encoded by YouTube: $ITEM"
         continue;;
 
     esac
