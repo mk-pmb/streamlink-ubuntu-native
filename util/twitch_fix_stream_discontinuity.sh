@@ -51,6 +51,8 @@ function video_codec_fix_twitch () {
     [ -z "$VAL" ] || continue$(echo W: >&2 \
       "skip: probably in use by PID ${VAL//$'\n'/, }: $ITEM")
 
+    check_avail_disk_space "$ITEM" || return $?
+
     for VAL in done wip ; do
       # ^- Set 'wip' last so we can use VAL after loop.
       VAL="$BFN.$VAL.$SUF"
@@ -85,6 +87,17 @@ function quick_cheap_fuser () {
   done
   FIND+=( ')' )
   "${FIND[@]}" 2>/dev/null | cut -d / -sf 3 | sort -gu || true
+}
+
+
+function check_avail_disk_space () {
+  local SRC="$1"; shift
+  local DEST="${1:-$SRC}"; shift
+  local UNIT='--block-size=M'
+  local NEED="$(du $UNIT -- "$SRC" | grep -oPe '^\d+')"
+  local AVAIL="$(df $UNIT --output=avail -- "$DEST" | grep -oPe '^\d+')"
+  [ "$AVAIL" -ge "$NEED" ] || return 2$(echo E: >&2 \
+    "Not enough space ($AVAIL < $NEED ${UNIT#*=}B) to convert $ITEM")
 }
 
 
