@@ -94,8 +94,10 @@ function check_avail_disk_space () {
   local SRC="$1"; shift
   local DEST="${1:-$SRC}"; shift
   local UNIT='--block-size=M'
-  local NEED="$(du $UNIT -- "$SRC" | grep -oPe '^\d+')"
-  local AVAIL="$(df $UNIT --output=avail -- "$DEST" | grep -oPe '^\d+')"
+  local NEED="$(du $UNIT -- "$SRC" | grep -oPe '^\s*\d+')"
+  NEED="${NEED//[^0-9]/}"
+  local AVAIL="$(df $UNIT --output=avail -- "$DEST" | grep -oPe '^\s*\d+')"
+  AVAIL="${AVAIL//[^0-9]/}"
   [ "$AVAIL" -ge "$NEED" ] || return 2$(echo E: >&2 \
     "Not enough space ($AVAIL < $NEED ${UNIT#*=}B) to convert $ITEM")
 }
