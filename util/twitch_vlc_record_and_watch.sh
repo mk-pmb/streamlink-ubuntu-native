@@ -209,10 +209,11 @@ function twrec_rec_core () {
     # --qt-minimal-view
     - )
 
+  local PRE_VLC_WIN_ID="$(xdotool getactivewindow)"
+  # echo D: "PRE_VLC_WIN_ID=$PRE_VLC_WIN_ID" >&2
   exec 8> >( exec "${VLC_CMD[@]}" &>/dev/null )
   local VLC_PID=$!
   [ "$DBGLV" -lt 2 ] || echo "D: VLC pid: $VLC_PID" >&2
-
   xdolurk_all &
 
   local HAD_ANY_MEDIA_BYTES=
@@ -454,6 +455,11 @@ function xdolurk_all () {
   local VLC_WIN_ID="$(find_vlc_window)"
   xdolurk_undisturb || return $?
   xdolurk_drive_down_volume || return $?
+
+  # Once initialization stuff has settled, …
+  sleep 2s
+  # … return the VLC window to regular state:
+  wmctrl -iFr "$VLC_WIN_ID" -b remove,below
 }
 
 
@@ -464,17 +470,13 @@ function xdolurk_undisturb () {
   # will raise itself once the stream starts, interrupting the user's work
   # even worse. Also, when it was initially maximized and then raises itself,
   # it unmaximizes itself.
-  # As a work-around, we hide the VLC window, check which other window was
-  # active, then unhide VLC (i.e. restore its window to a state it deems
-  # acceptable), then switch back to the previously active window.
-  local WM_DELAY='0.5s'
-  xdotool windowunmap --sync "$VLC_WIN_ID" || return $?
-  sleep "$WM_DELAY"
-  local PREV_WIN="$(xdotool getactivewindow)"
-  xdotool windowmap --sync "$VLC_WIN_ID" || return $?
-  sleep "$WM_DELAY"
-  xdotool windowactivate "$PREV_WIN" windowraise "$PREV_WIN" || return $?
-  sleep "$WM_DELAY"
+  # As a work-around, keep VLC's window in a state it deems acceptable,
+  # but set it to be shown "below all other windows":
+  wmctrl -iFr "$VLC_WIN_ID" -b add,below
+  # This will allow users to continue seeing the previously active window.
+  # For near-seamless continued interaction with the previous window,
+  # we also need to focus it again:
+  wmctrl -iFa "$PRE_VLC_WIN_ID"
 }
 
 
@@ -502,6 +504,8 @@ function xdolurk_drive_down_volume () {
   local KEY="${CFG[vlc_volume_down_key]}"
   [ -n "$KEY" ] || return 0
 
+  # Wait for queued window management interactions to settle:
+  sleep 0.2s
   xdotool keydown --window "$VLC_WIN_ID" "$KEY"
   # Earlier versions used to send a specific number of keystrokes.
   # However, xdotool's --window option was rather unreliable.
