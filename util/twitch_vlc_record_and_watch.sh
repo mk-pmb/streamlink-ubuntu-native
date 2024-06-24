@@ -37,6 +37,7 @@ function twrec_cli () {
       --func ) "$@"; return $?;;
 
       @audio ) CFG[quality]="${OPT#\@}_only";;
+      @audio_only | \
       @best | \
       @worst | \
       @[0-9][0-9]* )
