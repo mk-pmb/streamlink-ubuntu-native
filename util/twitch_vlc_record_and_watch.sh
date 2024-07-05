@@ -247,8 +247,8 @@ function twrec_rec_core () {
   #     of a hassle than it's worth.
 
   twrec_inject_clip before >&8 || true
-  eval "$PIPE_CMD" >&8
-  local SL_PIPE_RV="${PIPESTATUS[*]}"
+  local SL_PIPE_RV=
+  eval "$PIPE_CMD"' >&8; SL_PIPE_RV="${PIPESTATUS[*]}"'
   let SL_PIPE_RV="${SL_PIPE_RV// /+}"
 
   if [ -s "$REC_DEST" ]; then
