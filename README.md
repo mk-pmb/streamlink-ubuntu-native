@@ -14,6 +14,11 @@ A crutch to make streamlink run on Ubuntu.
 
 See subchapter "Upgrades" in install instructions below!
 
+* 2024-08-10: I was neither able to find a way to shim `BaseExceptionGroup`
+  onto the `builtins` module, nor to make `exceptiongroup` work, so for now,
+  the latest compatible version of streamlink is 6.7.0.
+
+
 
 
 Motivation
