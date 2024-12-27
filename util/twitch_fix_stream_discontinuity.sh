@@ -35,6 +35,7 @@ function video_codec_fix_twitch () {
     case "$VAL" in
       '... ftypisom...'* | \
       *'isomiso2avc1mp41'* | \
+      *'isomiso2mp41'* | \
       __looks_like_ffmpeg_reencoded__ )
         # NB: The "avc1" does not mean the video codec.
         echo D: skip "file that looks like it was encoded using ffmpeg: $ITEM"
