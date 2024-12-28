@@ -33,6 +33,17 @@ function video_codec_fix_twitch () {
 
     VAL="$(head --bytes=64 -- "$ITEM" | tr '\0' .)"
     case "$VAL" in
+      G@.?..* ) ;; # Twitch stream header 2024-12-27
+
+      ?PNG$'\r\n'* | \
+      *JFIF* | \
+      $'\n'* | \
+      $'\r\n'* | \
+      $'\xEF\xBB\xBF'* | \
+      __probably_not_a_video__ )
+        echo D: skip "file that seems to not be a video: $ITEM"
+        continue;;
+
       '... ftypisom...'* | \
       *'isomiso2avc1mp41'* | \
       *'isomiso2mp41'* | \
@@ -46,6 +57,10 @@ function video_codec_fix_twitch () {
         echo D: skip "file that looks like it was encoded by YouTube: $ITEM"
         continue;;
 
+      ...?ftyp* ) ;;
+      * )
+        echo D: skip "file with no ftyp header: $ITEM"
+        continue;;
     esac
 
     VAL="$(quick_cheap_fuser "$ITEM")" || return $?
