@@ -16,5 +16,5 @@
 
 
 
-  "npm vs. BOM = Unexpected token": "-*- coding: UTF-8 -*-"
+  "engines": { "bash": ">=5" }
 }

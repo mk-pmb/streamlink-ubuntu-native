@@ -15,11 +15,16 @@ function lurkrec_cli_main () {
   mkdir --parents -- "$CHAN"
   [ -d "$CHAN" ] || return 4$(echo E: "Not a directory: $1" >&2)
 
+  [ "${EPOCHSECONDS:-0}" -ge 1 ] || return 4$(
+    echo E: "Upgrade your bash shell to version 5 or later." >&2)
+  local WEEKDAY_SHORTNAMES=( $( TZ=UTC printf -- '%(%a)T\n' 7{0..6}01337 ) )
+
   local -A CFG=()
   local KEY= VAL=
   while [ "$#" -ge 1 ]; do
     VAL="$1"; shift
     case "$VAL" in
+      --weekdays=* | \
       --earliest=* | \
       --= )
         VAL="${VAL#--}"
@@ -49,6 +54,7 @@ function lurkrec_cli_main () {
     done
   done
 
+  lurkrec_validate_weekdays_option || return $?
   VAL="${CFG[earliest]}"
   [ -z "$VAL" ] || gxctd "$VAL" "twitch lurk chan=$CHAN $1" || return $?
 
@@ -99,14 +105,64 @@ function lurkrec_cli_main () {
 }
 
 
+function lurkrec_validate_weekdays_option () {
+  local VAL="${CFG[weekdays]}"
+  [ -n "$VAL" ] || return 0
+
+  # Starting the weekdays list with /^[+-][12]?[0-9]h,/ lets you declare
+  # that this streamer's schedule uses another timezone for the purpose of
+  # assigning weekday names to their streams.
+  #
+  # Example: Streamer "Gronkh" uses timezone Europe/Berlin for all regular
+  # time-related stuff, but his Friday streams may easily continue until
+  # noon of the next day. So if you're using Berlin time, too, it means
+  # you want a weekday check performed at 11:59 am on Saturday to still
+  # give "Fri" as the result. To achieve that, you'd use "-12h,Fri".
+  # That way, 11:59 am becomes negative(!) 00:01 am, i.e. 11:59 pm of
+  # the previous day, making it Friday.
+  #
+  CFG[weekdays_offset_hours]=0
+  case "$VAL" in
+    [+-][12][0-9]h,* | [+-][0-9]h,* )
+      CFG[weekdays_offset_hours]="${VAL%%h,*}"
+      VAL="${VAL#*,}";;
+  esac
+
+  local ERR="Option --weekdays=: !"
+  ERR+=" Expected a list (separated by space or comma) of any of:"
+  ERR+=" ${WEEKDAY_SHORTNAMES[*]}"
+
+  VAL="${VAL//,/ }"
+  local ACCEPT=" ${WEEKDAY_SHORTNAMES[*]} " # We'll use both spaces later.
+  local BAD="${VAL//[$ACCEPT]/}"
+  [ -z "$BAD" ] || return 4$(echo E: "${ERR/!/Unsupported characters.}" >&2)
+  local VALID=
+  for VAL in $VAL; do
+    [[ "$ACCEPT" == *" $VAL"* ]] || return 4$(
+      echo E: "${ERR/!/"Unsupported weekday short name '$VAL'."}" >&2)
+    VALID+="$VAL,"
+  done
+  [ -n "$VALID" ] || return 4$(
+      echo E: "${ERR/!/Found no weekday short names in that list.}" >&2)
+  CFG[weekdays]="${VALID%,}"
+}
 
 
-
-
-
+function lurkrec_check_weekdays_option () {
+  local ACCEPT="${CFG[weekdays]}"
+  [ -n "$ACCEPT" ] || return 0
+  local VAL="${CFG[weekdays_offset_hours]:-0}"
+  (( VAL *= 3600 )) # hours -> seconds
+  (( VAL += CHECK_UTS ))
+  printf -v VAL -- '%(%a)T' "$VAL"
+  [[ ",$ACCEPT," == *",$VAL,"* ]] || return $?$(
+    echo W: "Flinching: Weekday in stream schedule timezone is '$VAL'," \
+      "which is not in the list '$ACCEPT'." >&2)
+}
 
 
 function lurkrec_try_recording () {
+  lurkrec_check_weekdays_option || return $?
   printf -v DEST -- '%s/%(%y%m%d-%H%M%S)T.rec.mp4' "$CHAN" "$CHECK_UTS"
   echo D: "${REC_CMD[*]} >'$DEST'"
   "${REC_CMD[@]}" >"$DEST" || return $?
