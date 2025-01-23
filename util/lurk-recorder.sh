@@ -2,7 +2,7 @@
 # -*- coding: utf-8, tab-width: 2 -*-
 
 
-function lurk_recorder () {
+function lurkrec_cli_main () {
   export LANG{,UAGE}=en_US.UTF-8  # make error messages search engine-friendly
   # local SELFPATH="$(readlink -m -- "$BASH_SOURCE"/..)"
   # cd -- "$SELFPATH" || return $?
@@ -66,15 +66,13 @@ function lurk_recorder () {
     "$QUALI"
     )
 
-  local DEST= RV= DURA=
+  local CHECK_UTS= DEST= RV= DURA=
   local FAIL_STREAM_RMN_RETRYS=0
   while true; do
-    SECONDS=0
-    printf -v DEST -- '%s/%(%y%m%d-%H%M%S)T.rec.mp4' "$CHAN"
-    echo D: "${REC_CMD[*]} >'$DEST'"
-    "${REC_CMD[@]}" >"$DEST"
-    RV=$?
-    DURA="$SECONDS"
+    CHECK_UTS="$EPOCHSECONDS"
+    lurkrec_try_recording; RV=$?
+    DURA="$EPOCHSECONDS"
+    (( DURA -= CHECK_UTS ))
     if [ -f "$DEST" -a ! -s "$DEST" ]; then
       echo -n 'Output seems empty? -> '
       ls -l -- "$DEST"
@@ -84,7 +82,7 @@ function lurk_recorder () {
       rm --verbose -- "$DEST"
     fi
     echo -n D: "rv=$RV after $DURA sec => "
-    if [ "$SECONDS" -gt "$FAIL_STREAM_DURA_SEC" ]; then
+    if [ "$DURA" -gt "$FAIL_STREAM_DURA_SEC" ]; then
       FAIL_STREAM_RMN_RETRYS="$FAIL_STREAM_MAX_RETRYS"
       echo "long stream. reset fail stream retrys to $FAIL_STREAM_RMN_RETRYS."
     fi
@@ -108,5 +106,19 @@ function lurk_recorder () {
 
 
 
+function lurkrec_try_recording () {
+  printf -v DEST -- '%s/%(%y%m%d-%H%M%S)T.rec.mp4' "$CHAN" "$CHECK_UTS"
+  echo D: "${REC_CMD[*]} >'$DEST'"
+  "${REC_CMD[@]}" >"$DEST" || return $?
+}
 
-lurk_recorder "$@"; exit $?
+
+
+
+
+
+
+
+
+
+lurkrec_cli_main "$@"; exit $?
