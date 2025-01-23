@@ -15,12 +15,20 @@ function lurk_recorder () {
   mkdir --parents -- "$CHAN"
   [ -d "$CHAN" ] || return 4$(echo E: "Not a directory: $1" >&2)
 
-  case "$1" in
-    --earliest=* )
-      gxctd "${1#*=}" "twitch lurk chan=$CHAN $1" || return $?
-      shift;;
-  esac
-  [ "$#" == 0 ] || return 4$(echo E: "unsupported argumnts: $*" >&2)
+  local -A CFG=()
+  local KEY= VAL=
+  while [ "$#" -ge 1 ]; do
+    VAL="$1"; shift
+    case "$VAL" in
+      --earliest=* | \
+      --= )
+        VAL="${VAL#--}"
+        CFG["${VAL%%=*}"]="${VAL#*=}"
+        continue;;
+    esac
+    echo E: "unsupported argumnts: $OPT" >&2
+    return 4
+  done
 
   local LOGF="$CHAN/log.$(date +%y%m%d-%H%M%S)-$$.txt"
   local PROXY_PROG=
@@ -40,6 +48,9 @@ function lurk_recorder () {
       done
     done
   done
+
+  VAL="${CFG[earliest]}"
+  [ -z "$VAL" ] || gxctd "$VAL" "twitch lurk chan=$CHAN $1" || return $?
 
   exec &> >(ts | tee -- "$LOGF")
 
