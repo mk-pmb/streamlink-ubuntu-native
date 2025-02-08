@@ -19,6 +19,10 @@ function lurkrec_cli_main () {
     echo E: "Upgrade your bash shell to version 5 or later." >&2)
   local WEEKDAY_SHORTNAMES=( $( TZ=UTC printf -- '%(%a)T\n' 7{0..6}01337 ) )
 
+  local ORIG_STDOUT_FD= ORIG_STDERR_FD=
+  exec {ORIG_STDOUT_FD}>&1
+  exec {ORIG_STDERR_FD}>&2
+
   local -A CFG=()
   local KEY= VAL=
   while [ "$#" -ge 1 ]; do
@@ -35,7 +39,6 @@ function lurkrec_cli_main () {
     return 4
   done
 
-  local LOGF="$CHAN/log.$(date +%y%m%d-%H%M%S)-$$.txt"
   local PROXY_PROG=
   local LURK_INTERVAL=15m
   local FAIL_STREAM_DURA_SEC=180
@@ -58,8 +61,6 @@ function lurkrec_cli_main () {
   VAL="${CFG[earliest]}"
   [ -z "$VAL" ] || gxctd "$VAL" "twitch lurk chan=$CHAN $1" || return $?
 
-  exec &> >(ts | tee -- "$LOGF")
-
   local REC_CMD=(
     $PROXY_PROG
     streamlink
@@ -74,8 +75,22 @@ function lurkrec_cli_main () {
 
   local CHECK_UTS= DEST= RV= DURA=
   local FAIL_STREAM_RMN_RETRYS=0
+  local DATE_NOW= LOGF_DATE= LOGF_CUR=
+
   while true; do
     CHECK_UTS="$EPOCHSECONDS"
+    printf -v DATE_NOW -- '%(%y%m%d)T' "$CHECK_UTS"
+
+    [ -n "$LOGF_CUR" -a -f "$LOGF_CUR" ] || LOGF_CUR=
+    [ "$DATE_NOW" == "$LOGF_DATE" ] || LOGF_CUR=
+    if [ -z "$LOGF_CUR" ]; then
+      LOGF_DATE="$DATE_NOW"
+      LOGF_CUR="$CHAN/log.$LOGF_DATE-$(
+        printf -- '%(%H%M%S)T' "$CHECK_UTS")-$$.txt"
+      exec &> >(ts | tee --append -- "$LOGF_CUR" >&$ORIG_STDOUT_FD)
+      echo D: "Start new logfile: $LOGF_CUR"
+    fi
+
     lurkrec_try_recording; RV=$?
     DURA="$EPOCHSECONDS"
     (( DURA -= CHECK_UTS ))
