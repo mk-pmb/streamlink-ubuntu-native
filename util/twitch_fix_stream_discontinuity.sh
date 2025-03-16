@@ -77,7 +77,7 @@ function video_codec_fix_twitch () {
       return 4
     done
     $MV "$ITEM" "$VAL" || return $?
-    ffmpeg -i "$VAL" -c copy "$ITEM" || return $?$(
+    ffmpeg -hide_banner -i "$VAL" -c copy "$ITEM" || return $?$(
       echo E: "Failed to convert (rv=$?) $VAL" >&2)
     $MV "$VAL" "$BFN.done.$SUF" || return $?
   done
