@@ -87,6 +87,7 @@ function lurkrec_cli_main () {
       LOGF_DATE="$DATE_NOW"
       LOGF_CUR="$CHAN/log.$LOGF_DATE-$(
         printf -- '%(%H%M%S)T' "$CHECK_UTS")-$$.txt"
+      echo D: "Switching to new logfile: $LOGF_CUR"
       exec &> >(ts | tee --append -- "$LOGF_CUR" >&$ORIG_STDOUT_FD)
       echo D: "Start new logfile: $LOGF_CUR"
     fi
