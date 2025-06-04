@@ -47,7 +47,7 @@ function lurkrec_cli_main () {
   local FAIL_STREAM_MAX_RETRYS=10
   local BUFSZ=4K
   local QUALI='360p,worst'
-  local REC_VIDEO_SUFFIX='.mp4'
+  local REC_VIDEO_SUFFIX='.ts'
   local SKIP_ADS= # use the rc to set this to '+' to enable
   local RC=
   for RC in '' "$CHAN"/; do
