@@ -19,8 +19,10 @@ function video_codec_fix_twitch () {
     SUF="${ITEM##*.}"
     [ "$SUF" == "$ITEM" ] && SUF=
     case "${#SUF}:$SUF" in
-      [^3-6]:* ) SUF='!length';;
+      2:ts ) ;; # MPEG TS
       [0-9]:*[^a-z0-9]* ) SUF='!character(s)';;
+      [3-6]:* ) ;;
+      * ) SUF='!length';;
     esac
     [ "${SUF:0:1}" != '!' ] || return 3$(
       echo E: "Unsupported suffix: Unexpected ${SUF:1}: $ITEM" >&2)
