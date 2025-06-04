@@ -12,8 +12,6 @@ function lurkrec_cli_main () {
     echo E: "Channel name (arg 1) must start with a letter!" \
       "(Options go behind.)" >&2)
   CHAN="${CHAN%/}"
-  mkdir --parents -- "$CHAN"
-  [ -d "$CHAN" ] || return 4$(echo E: "Not a directory: $1" >&2)
 
   [ "${EPOCHSECONDS:-0}" -ge 1 ] || return 4$(
     echo E: "Upgrade your bash shell to version 5 or later." >&2)
@@ -23,7 +21,9 @@ function lurkrec_cli_main () {
   exec {ORIG_STDOUT_FD}>&1
   exec {ORIG_STDERR_FD}>&2
 
-  local -A CFG=()
+  local -A CFG=(
+    [task]=record
+    )
   local KEY= VAL=
   while [ "$#" -ge 1 ]; do
     VAL="$1"; shift
@@ -34,13 +34,17 @@ function lurkrec_cli_main () {
         VAL="${VAL#--}"
         CFG["${VAL%%=*}"]="${VAL#*=}"
         continue;;
+      --metadata )
+        CFG[task]="${VAL#--}"; continue;;
     esac
     echo E: "unsupported argumnts: $OPT" >&2
     return 4
   done
 
   local PROXY_PROG=
+  local SL_PROG_NAME='streamlink'
   local LURK_INTERVAL=15m
+  local METADATA_INTERVAL=
   local FAIL_STREAM_DURA_SEC=180
   # ^-- Very short stream = probably just a glitch = retry sooner than usual
   local FAIL_STREAM_RETRY_DELAY=30s
@@ -58,13 +62,21 @@ function lurkrec_cli_main () {
     done
   done
 
+  lurkrec_"${CFG[task]}" "$@" || return $?
+}
+
+
+function lurkrec_record () {
   lurkrec_validate_weekdays_option || return $?
   VAL="${CFG[earliest]}"
   [ -z "$VAL" ] || gxctd "$VAL" "twitch lurk chan=$CHAN $1" || return $?
 
+  mkdir --parents -- "$CHAN"
+  [ -d "$CHAN" ] || return 4$(echo E: "Not a directory: $1" >&2)
+
   local REC_CMD=(
     $PROXY_PROG
-    streamlink
+    $SL_PROG_NAME
     --ringbuffer-size "$BUFSZ"
     --twitch-disable-hosting
     --twitch-disable-reruns
@@ -119,6 +131,8 @@ function lurkrec_cli_main () {
       sleep "$LURK_INTERVAL" || return $?
     fi
   done
+
+  kill -HUP "$META_DATA_LOG_HELPER_PID" 2>/dev/null || true
 }
 
 
@@ -184,7 +198,59 @@ function lurkrec_try_recording () {
   printf -v REC_BFN -- '%s/%(%y%m%d-%H%M%S)T.rec' "$CHAN" "$CHECK_UTS"
   REC_VIDEO_DEST="$REC_BFN$REC_VIDEO_SUFFIX"
   echo D: "${REC_CMD[*]} >'$REC_VIDEO_DEST'"
-  "${REC_CMD[@]}" >"$REC_VIDEO_DEST" || return $?
+  "${REC_CMD[@]}" >"$REC_VIDEO_DEST" &
+  local REC_PID=$!
+
+  META_LOG="$REC_BFN.meta.jsonl" lurkrec_metadata_log_helper &
+  local META_DATA_LOG_HELPER_PID=$!
+  disown "$META_DATA_LOG_HELPER_PID"
+
+  wait "$REC_PID"; local REC_RV=$?
+  kill -HUP -- "$META_DATA_LOG_HELPER_PID" 2>/dev/null || true
+
+  return "$REC_RV"
+}
+
+
+function lurkrec_metadata () {
+  local URL="twitch.tv/${CHAN,,}"
+  local SL_CMD=(
+    $PROXY_PROG
+    $SL_PROG_NAME
+    --json
+    "$URL"
+    )
+  local SED='s~\n~~g;s~\}$~\t&\n~'
+  local JSON="$( "${SL_CMD[@]}" | jq --tab .metadata | sed -zre "$SED" )"
+  [[ "$JSON" == '{'*'}' ]] || return 4$(
+    echo E: "Failed to detect stream metadata for: $URL" >&2)
+  echo "$JSON"
+}
+
+
+function lurkrec_metadata_log_helper () {
+  # First. wait until we actually have video data: We wouldn't want to
+  # create a meta data log file for a failed recording.
+  [ -f "$REC_VIDEO_DEST" ] || return 4$(echo E: $FUNCNAME: >&2 \
+    "REC_VIDEO_DEST='$REC_VIDEO_DEST' is not a regular file!")
+  while kill -0 -- "$REC_PID" 2>/dev/null && [ ! -s "$REC_VIDEO_DEST" ]; do
+    sleep 1s
+  done
+
+  local NOW= META= INTV="$METADATA_INTERVAL"
+  [ -n "$INTV" ] || INTV="$LURK_INTERVAL"
+  while kill -0 -- "$REC_PID" 2>/dev/null ; do
+    META="$(lurkrec_metadata)"
+    NOW="$EPOCHSECONDS"
+    echo '[metadata]' "$META"
+    [ -z "$META_LOG" ] || (
+      printf '{\t"lurkrec_date": "%(%F %T)T",' "$NOW"
+      printf '\t"lurkrec_uts": %s,' "$NOW"
+      echo "${META#'{'}"
+      ) >>"$META_LOG" || true
+    sleep "$INTV" || return 4$(
+      echo E: $FUNCNAME: "Failed to sleep for '$INTV'" >&2)
+  done
 }
 
 
