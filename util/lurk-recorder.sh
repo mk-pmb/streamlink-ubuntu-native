@@ -198,6 +198,8 @@ function lurkrec_try_recording () {
   printf -v REC_BFN -- '%s/%(%y%m%d-%H%M%S)T.rec' "$CHAN" "$CHECK_UTS"
   REC_VIDEO_DEST="$REC_BFN$REC_VIDEO_SUFFIX"
   echo D: "${REC_CMD[*]} >'$REC_VIDEO_DEST'"
+  >"$REC_VIDEO_DEST" || return $?$(
+    echo E: "Failed to record: Cannot create file: $REC_VIDEO_DEST" >&2)
   "${REC_CMD[@]}" >"$REC_VIDEO_DEST" &
   local REC_PID=$!
 
