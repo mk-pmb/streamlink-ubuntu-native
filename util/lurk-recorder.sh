@@ -239,10 +239,23 @@ function lurkrec_metadata_log_helper () {
 
   local NOW= META= INTV="$METADATA_INTERVAL"
   [ -n "$INTV" ] || INTV="$LURK_INTERVAL"
+
+  local ERROR_PLACEHOLDER='null'
+  local PREV="$ERROR_PLACEHOLDER"
+
   while kill -0 -- "$REC_PID" 2>/dev/null ; do
     META="$(lurkrec_metadata)"
     NOW="$EPOCHSECONDS"
-    echo '[metadata]' "$META"
+    if [ -z "$META" ]; then
+      echo "[metadata] error! previous: $PREV"
+      META='{ "!":'" $NOW }"
+    elif [ "$META" == "$PREV" ]; then
+      echo "[metadata] same: $META"
+      META='{ "=":'" $NOW }"
+    else
+      echo "[metadata] updated: $META previous: $PREV"
+      PREV="$META"
+    fi
     [ -z "$META_LOG" ] || (
       printf '{\t"lurkrec_date": "%(%F %T)T",' "$NOW"
       printf '\t"lurkrec_uts": %s,' "$NOW"
