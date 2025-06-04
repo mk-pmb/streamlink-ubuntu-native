@@ -47,6 +47,7 @@ function lurkrec_cli_main () {
   local FAIL_STREAM_MAX_RETRYS=10
   local BUFSZ=4K
   local QUALI='360p,worst'
+  local REC_VIDEO_SUFFIX='.mp4'
   local SKIP_ADS= # use the rc to set this to '+' to enable
   local RC=
   for RC in '' "$CHAN"/; do
@@ -73,7 +74,7 @@ function lurkrec_cli_main () {
     "$QUALI"
     )
 
-  local CHECK_UTS= DEST= RV= DURA=
+  local CHECK_UTS= REC_VIDEO_DEST= RV= DURA=
   local FAIL_STREAM_RMN_RETRYS=0
   local DATE_NOW= LOGF_DATE= LOGF_CUR=
 
@@ -95,13 +96,13 @@ function lurkrec_cli_main () {
     lurkrec_try_recording; RV=$?
     DURA="$EPOCHSECONDS"
     (( DURA -= CHECK_UTS ))
-    if [ -f "$DEST" -a ! -s "$DEST" ]; then
+    if [ -f "$REC_VIDEO_DEST" -a ! -s "$REC_VIDEO_DEST" ]; then
       echo -n 'Output seems empty? -> '
-      ls -l -- "$DEST"
+      ls -l -- "$REC_VIDEO_DEST"
       echo -n 'Delete empty output -> '
       # mv --verbose --no-clobber --no-target-directory \
-      #   -- "$DEST"{,.would-have-deleted.debug}
-      rm --verbose -- "$DEST"
+      #   -- "$REC_VIDEO_DEST"{,.would-have-deleted.debug}
+      rm --verbose -- "$REC_VIDEO_DEST"
     fi
     echo -n D: "rv=$RV after $DURA sec => "
     if [ "$DURA" -gt "$FAIL_STREAM_DURA_SEC" ]; then
@@ -179,9 +180,11 @@ function lurkrec_check_weekdays_option () {
 
 function lurkrec_try_recording () {
   lurkrec_check_weekdays_option || return $?
-  printf -v DEST -- '%s/%(%y%m%d-%H%M%S)T.rec.mp4' "$CHAN" "$CHECK_UTS"
-  echo D: "${REC_CMD[*]} >'$DEST'"
-  "${REC_CMD[@]}" >"$DEST" || return $?
+  local REC_BFN=
+  printf -v REC_BFN -- '%s/%(%y%m%d-%H%M%S)T.rec' "$CHAN" "$CHECK_UTS"
+  REC_VIDEO_DEST="$REC_BFN$REC_VIDEO_SUFFIX"
+  echo D: "${REC_CMD[*]} >'$REC_VIDEO_DEST'"
+  "${REC_CMD[@]}" >"$REC_VIDEO_DEST" || return $?
 }
 
 
