@@ -13,8 +13,10 @@ function video_codec_fix_twitch () {
   [ "$1" != -- ] || shift
   local SUF_BROKEN='.b0rken-orig'
   local SUF_FIXED='.fixed'
-  local ITEM= BFN= VAL=
+  local ITEM= VAL=
   local INPUT_SUF= # original input filename extension
+  local BROKEN_BFN=
+  local OUT_DEST=
   local MV='mv --verbose --no-clobber --'
   for ITEM in "$@"; do
     INPUT_SUF="${ITEM##*.}"
@@ -27,12 +29,12 @@ function video_codec_fix_twitch () {
     esac
     [ "${INPUT_SUF:0:1}" != '!' ] || return 3$(
       echo E: "Unsupported suffix: Unexpected ${INPUT_SUF:1}: $ITEM" >&2)
-    local BFN="${ITEM%.$INPUT_SUF}"
-    case "$BFN" in
+    local BROKEN_BFN="${ITEM%.$INPUT_SUF}"
+    case "$BROKEN_BFN" in
       *"$SUF_FIXED" ) echo D: skip "'*$SUF_FIXED' file: $ITEM"; continue;;
       *"$SUF_BROKEN".* ) echo D: skip "'*$SUF_BROKEN.*' file: $ITEM"; continue;;
     esac
-    BFN+="$SUF_BROKEN"
+    BROKEN_BFN+="$SUF_BROKEN"
 
     VAL="$(head --bytes=64 -- "$ITEM" | tr '\0' .)"
     case "$VAL" in
@@ -72,17 +74,19 @@ function video_codec_fix_twitch () {
 
     check_avail_disk_space "$ITEM" || return $?
 
-    for VAL in done wip ; do
-      # ^- Set 'wip' last so we can use VAL after loop.
-      VAL="$BFN.$VAL.$INPUT_SUF"
+    for VAL in "$BROKEN_BFN".{done,wip}."$INPUT_SUF" ; do
+      # ^- Check 'wip' last so we can use VAL after loop.
       [ -e "$VAL" ] || continue
       echo E: "File already exists: $VAL" >&2
       return 4
     done
+    # VAL is now the WIP file name.
     $MV "$ITEM" "$VAL" || return $?
-    ffmpeg -hide_banner -i "$VAL" -c copy "$ITEM" || return $?$(
+    OUT_DEST="$ITEM"
+    OUT_DEST="${OUT_DEST/%.ts/.mp4}"
+    ffmpeg -hide_banner -i "$VAL" -c copy "$OUT_DEST" || return $?$(
       echo E: "Failed to convert (rv=$?) $VAL" >&2)
-    $MV "$VAL" "$BFN.done.$INPUT_SUF" || return $?
+    $MV "$VAL" "$BROKEN_BFN.done.$INPUT_SUF" || return $?
   done
 }
 
