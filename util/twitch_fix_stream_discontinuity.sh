@@ -11,27 +11,28 @@ function video_codec_fix_twitch () {
       'Use --netfs as first argument to override.' >&2)
 
   [ "$1" != -- ] || shift
-  local ORIGSUF='.b0rken-orig'
-  local SEMISUF='.fixed'
-  local ITEM= SUF= BFN= VAL=
+  local SUF_BROKEN='.b0rken-orig'
+  local SUF_FIXED='.fixed'
+  local ITEM= BFN= VAL=
+  local INPUT_SUF= # original input filename extension
   local MV='mv --verbose --no-clobber --'
   for ITEM in "$@"; do
-    SUF="${ITEM##*.}"
-    [ "$SUF" == "$ITEM" ] && SUF=
-    case "${#SUF}:$SUF" in
+    INPUT_SUF="${ITEM##*.}"
+    [ "$INPUT_SUF" == "$ITEM" ] && INPUT_SUF=
+    case "${#INPUT_SUF}:$INPUT_SUF" in
       2:ts ) ;; # MPEG TS
-      [0-9]:*[^a-z0-9]* ) SUF='!character(s)';;
+      [0-9]:*[^a-z0-9]* ) INPUT_SUF='!character(s)';;
       [3-6]:* ) ;;
-      * ) SUF='!length';;
+      * ) INPUT_SUF='!length';;
     esac
-    [ "${SUF:0:1}" != '!' ] || return 3$(
-      echo E: "Unsupported suffix: Unexpected ${SUF:1}: $ITEM" >&2)
-    local BFN="${ITEM%.$SUF}"
+    [ "${INPUT_SUF:0:1}" != '!' ] || return 3$(
+      echo E: "Unsupported suffix: Unexpected ${INPUT_SUF:1}: $ITEM" >&2)
+    local BFN="${ITEM%.$INPUT_SUF}"
     case "$BFN" in
-      *"$SEMISUF" ) echo D: skip "'*$SEMISUF' file: $ITEM"; continue;;
-      *"$ORIGSUF".* ) echo D: skip "'*$ORIGSUF.*' file: $ITEM"; continue;;
+      *"$SUF_FIXED" ) echo D: skip "'*$SUF_FIXED' file: $ITEM"; continue;;
+      *"$SUF_BROKEN".* ) echo D: skip "'*$SUF_BROKEN.*' file: $ITEM"; continue;;
     esac
-    BFN+="$ORIGSUF"
+    BFN+="$SUF_BROKEN"
 
     VAL="$(head --bytes=64 -- "$ITEM" | tr '\0' .)"
     case "$VAL" in
@@ -73,7 +74,7 @@ function video_codec_fix_twitch () {
 
     for VAL in done wip ; do
       # ^- Set 'wip' last so we can use VAL after loop.
-      VAL="$BFN.$VAL.$SUF"
+      VAL="$BFN.$VAL.$INPUT_SUF"
       [ -e "$VAL" ] || continue
       echo E: "File already exists: $VAL" >&2
       return 4
@@ -81,7 +82,7 @@ function video_codec_fix_twitch () {
     $MV "$ITEM" "$VAL" || return $?
     ffmpeg -hide_banner -i "$VAL" -c copy "$ITEM" || return $?$(
       echo E: "Failed to convert (rv=$?) $VAL" >&2)
-    $MV "$VAL" "$BFN.done.$SUF" || return $?
+    $MV "$VAL" "$BFN.done.$INPUT_SUF" || return $?
   done
 }
 
