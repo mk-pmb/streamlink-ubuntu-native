@@ -4,7 +4,7 @@
 
 function lurkrec_cli_main () {
   export LANG{,UAGE}=en_US.UTF-8  # make error messages search engine-friendly
-  # local SELFPATH="$(readlink -m -- "$BASH_SOURCE"/..)"
+  local SELFPATH="$(readlink -m -- "$BASH_SOURCE"/..)"
   # cd -- "$SELFPATH" || return $?
 
   local CHAN="$1"; shift
@@ -222,10 +222,11 @@ function lurkrec_metadata () {
     --json
     "$URL"
     )
-  local SED='s~\n~~g;s~\}$~\t&\n~'
-  local JSON="$( "${SL_CMD[@]}" | jq --tab .metadata | sed -zre "$SED" )"
+  local JSON="$( "${SL_CMD[@]}" |
+    python3 "$SELFPATH"/stream_metadata_sort.py )"
   [[ "$JSON" == '{'*'}' ]] || return 4$(
     echo E: "Failed to detect stream metadata for: $URL" >&2)
+  JSON="${JSON//$'\n'/$'\t'}"
   echo "$JSON"
 }
 
@@ -244,19 +245,22 @@ function lurkrec_metadata_log_helper () {
 
   local ERROR_PLACEHOLDER='null'
   local PREV="$ERROR_PLACEHOLDER"
+  local SHORT_PREV="$PREV"
 
   while kill -0 -- "$REC_PID" 2>/dev/null ; do
     META="$(lurkrec_metadata)"
     NOW="$EPOCHSECONDS"
     if [ -z "$META" ]; then
-      echo "[metadata] error! previous: $PREV"
+      echo "[metadata] error! previous: $SHORT_PREV"
       META='{ "!":'" $NOW }"
     elif [ "$META" == "$PREV" ]; then
-      echo "[metadata] same: $META"
+      echo "[metadata] same: $SHORT_PREV"
       META='{ "=":'" $NOW }"
     else
       echo "[metadata] updated: $META previous: $PREV"
       PREV="$META"
+      SHORT_PREV="${PREV:0:100}"
+      [ "$SHORT_PREV" == "$PREV" ] || SHORT_PREV+=$'\t…'
     fi
     [ -z "$META_LOG" ] || (
       printf '{\t"lurkrec_date": "%(%F %T)T",' "$NOW"
