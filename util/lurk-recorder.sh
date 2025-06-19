@@ -255,7 +255,7 @@ function lurkrec_metadata_log_helper () {
       META='"!"'
     elif [ "$META" == "$PREV" ]; then
       echo "[metadata] same: $SHORT_PREV"
-      META='"="'
+      [ -f "$META_LOG" ] && [ -s "$META_LOG" ] && META='"="' || true
     else
       echo "[metadata] updated: $META previous: $PREV"
       PREV="$META"
