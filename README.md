@@ -20,14 +20,14 @@ See subchapter "Upgrades" in install instructions below!
 
 
 
-
 Motivation
 ----------
 
 #### What is streamlink?
 
-[Streamlink](https://github.com/streamlink/streamlink)
-is a wonderful tool to help watch live streams.
+[Streamlink][sl-repo-official] is a wonderful tool to help watch live streams.
+
+  [sl-repo-official]: https://github.com/streamlink/streamlink
 
 
 #### The proper way to install SL
@@ -76,24 +76,24 @@ Install
 -------
 
 1.  Use Ubuntu 20.04 (focal) or a later LTS version.
-1.  Install these apt packages:
-    * `python3-isodate`
-    * `python3-pycountry`
-    * `python3-pycryptodome`
-    * `python3-socks`
-    * `python3-websocket`
 1.  Any paths that you'll have to choose in the next steps
     MUST NOT contain any colon (`:`).
     This also applies for the effective path to which they resolve.
     (The latter is only relevant for paths that contain symlink steps.)
-1.  Clone the streamlink repo somewhere.
 1.  Clone this repo somewhere.
+1.  Clone [the streamlink repo][sl-repo-official] somewhere.
+1.  `sudo -E apt install`
+    `python3-{dev,isodate,pip,pycountry,pycryptodome,socks,websocket}`
+1.  `sudo -E pip3 install`
+    `typing_extensions`
 1.  In your clone of this repo, create a symlink named `sl-repo`
     that points to your local clone of the streamlink repo.
     * In case it's more convenient, you can instead set the SL repo path
       as environment variable `STREAMLINK_REPO_PATH`.
 1.  Create a symlink `/usr/local/bin/streamlink` that points to
     `wrapper.sh` from this repo.
+1.  Because of the caveat noted above, you have to downgrade streamlink:<br>
+    `cd sl-repo && git branch compat 28c03834fcdd && git checkout compat`
 
 
 
