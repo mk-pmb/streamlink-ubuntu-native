@@ -76,12 +76,16 @@ Install
 -------
 
 1.  Use Ubuntu 20.04 (focal) or a later LTS version.
-1.  Install these apt packages:
+1.  Install these apt packages (`sudo -E apt-get install …`):
+    * `python3-dev`
     * `python3-isodate`
+    * `python3-pip`
     * `python3-pycountry`
     * `python3-pycryptodome`
     * `python3-socks`
     * `python3-websocket`
+1.  Install these python packages (`sudo -E pip3 install …`)
+    * `typing_extensions`
 1.  Any paths that you'll have to choose in the next steps
     MUST NOT contain any colon (`:`).
     This also applies for the effective path to which they resolve.
@@ -94,6 +98,8 @@ Install
       as environment variable `STREAMLINK_REPO_PATH`.
 1.  Create a symlink `/usr/local/bin/streamlink` that points to
     `wrapper.sh` from this repo.
+1.  Because of the caveat noted above, you have to downgrade streamlink:<br>
+    `cd sl-repo && git branch compat 28c03834fcdd && git checkout compat`
 
 
 
