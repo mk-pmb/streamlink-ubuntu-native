@@ -1,0 +1,13 @@
+*.aac -text
+*.au -text
+*.gz -text
+*.jpeg -text
+*.mkv -text
+*.mp4 -text
+*.ogg -text
+*.pgm -text
+*.png -text
+*.ppm -text
+*.tar -text
+*.wav -text
+*.zip -text
