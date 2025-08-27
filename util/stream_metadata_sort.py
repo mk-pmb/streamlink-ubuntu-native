@@ -14,6 +14,16 @@ data = json.load(sys.stdin)
 data = data.get('metadata', data)
 data = dict(sorted(data.items()))
 data = { **priority_keys, **data }
+
+empty_string_fields = []
+for k, v in data.items():
+    if v == '':
+        empty_string_fields += (k,)
+if len(empty_string_fields):
+    trace = ' <- detected by …/' + '/'.join(__file__.split('/')[-3:])
+    empty_string_fields += (trace,)
+    data['empty_string_fields'] = '|'.join(empty_string_fields)
+
 data = json.dumps(data, indent=0, ensure_ascii=False)
 
 def to_unicode_hex_escape(char):
