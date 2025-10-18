@@ -20,6 +20,7 @@ function lurkrec_cli_main () {
   local ORIG_STDOUT_FD= ORIG_STDERR_FD=
   exec {ORIG_STDOUT_FD}>&1
   exec {ORIG_STDERR_FD}>&2
+  exec {LOGF_FD}</dev/null # just find the next unused FD.
 
   local -A CFG=(
     [task]=record
@@ -94,14 +95,17 @@ function lurkrec_record () {
     CHECK_UTS="$EPOCHSECONDS"
     printf -v DATE_NOW -- '%(%y%m%d)T' "$CHECK_UTS"
 
-    [ -n "$LOGF_CUR" -a -f "$LOGF_CUR" ] || LOGF_CUR=
+    [ -f "$LOGF_CUR" ] || LOGF_CUR=
     [ "$DATE_NOW" == "$LOGF_DATE" ] || LOGF_CUR=
-    if [ -z "$LOGF_CUR" ]; then
+    if [ -z "$LOGF_CUR" ]; then # rotate the log
       LOGF_DATE="$DATE_NOW"
       LOGF_CUR="$CHAN/log.$LOGF_DATE-$(
         printf -- '%(%H%M%S)T' "$CHECK_UTS")-$$.txt"
       echo D: "Switching to new logfile: $LOGF_CUR"
-      exec &> >(LC_TIME=C ts | tee --append -- "$LOGF_CUR" >&$ORIG_STDOUT_FD)
+      exec >>"$LOGF_CUR"
+      eval "exec $LOGF_FD>&1"
+      exec &> >(exec "$SELFPATH"/logtee.sh "/proc/$$/fd/$LOGF_FD" \
+        >&"$LOGF_FD" 2>&"$ORIG_STDOUT_FD")
       echo D: "Start new logfile: $LOGF_CUR"
     fi
 
@@ -273,6 +277,8 @@ function lurkrec_metadata_log_helper () {
       echo E: $FUNCNAME: "Failed to sleep for '$INTV'" >&2)
   done
 }
+
+
 
 
 
