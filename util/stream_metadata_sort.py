@@ -5,13 +5,18 @@ import json
 import re
 import sys
 
+import string_util
+
+
 priority_keys = {
-    "category": None,
-    "title": None,
+    'category_snake': None,
+    'category': None,
+    'title': None,
 }
 
 data = json.load(sys.stdin)
 data = data.get('metadata', data)
+data['category_snake'] = string_util.snake_case(data.get('category') or '')
 data = dict(sorted(data.items()))
 data = { **priority_keys, **data }
 
