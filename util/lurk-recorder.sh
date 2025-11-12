@@ -53,7 +53,9 @@ function lurkrec_cli_main () {
   local BUFSZ=4K
   local QUALI="${LURKREC_QUALI:-360p30,360p,worst}"
   local REC_VIDEO_SUFFIX='.ts'
-  local SKIP_ADS= # use the rc to set this to '+' to enable
+  local SKIP_ADS= # Option --twitch-disable-ads has been disabled anyway.
+  local WATCHDOG_WITH_ADS_TOL_SEC=30
+  local WATCHDOG_SKIP_ADS_TOL_SEC=$(( 8 * 60 ))
   local RC=
   for RC in '' "$CHAN"/; do
     for RC in "$RC"{.,}; do
@@ -120,16 +122,20 @@ function lurkrec_record () {
     fi
     echo -n D: "rv=$RV after $DURA sec => "
     if [ "$DURA" -gt "$FAIL_STREAM_DURA_SEC" ]; then
+      echo -n 'long stream.' \
+        "Reset fail stream retrys to $FAIL_STREAM_MAX_RETRYS. => "
       FAIL_STREAM_RMN_RETRYS="$FAIL_STREAM_MAX_RETRYS"
-      echo "long stream. reset fail stream retrys to $FAIL_STREAM_RMN_RETRYS."
     fi
-    echo "$FAIL_STREAM_RMN_RETRYS fail stream retry(s) remaining. => "
-    if [ "$FAIL_STREAM_RMN_RETRYS" -ge 1 ]; then
-      echo "wait $FAIL_STREAM_RETRY_DELAY."
+    echo -n "$FAIL_STREAM_RMN_RETRYS fail stream retry(s) remaining. "
+    if [ "$RV" -ge 128 ]; then
+      echo 'Recorder was killed by a signal, probably from watchdog.' \
+        '=> Retry instantly.'
+    elif [ "$FAIL_STREAM_RMN_RETRYS" -ge 1 ]; then
+      echo "=> Wait $FAIL_STREAM_RETRY_DELAY."
       sleep "$FAIL_STREAM_RETRY_DELAY" || return $?
       (( FAIL_STREAM_RMN_RETRYS -= 1 ))
     else
-      echo "off-stream lurk. => wait $LURK_INTERVAL."
+      echo "=> Off-stream lurk. => wait $LURK_INTERVAL."
       sleep "$LURK_INTERVAL" || return $?
     fi
   done
@@ -202,15 +208,18 @@ function lurkrec_try_recording () {
   echo D: "${REC_CMD[*]} >'$REC_VIDEO_DEST'"
   >"$REC_VIDEO_DEST" || return $?$(
     echo E: "Failed to record: Cannot create file: $REC_VIDEO_DEST" >&2)
-  "${REC_CMD[@]}" >"$REC_VIDEO_DEST" &
+  exec "${REC_CMD[@]}" >"$REC_VIDEO_DEST" &
   local REC_PID=$!
+  local BG_HELPER_PIDS=
 
-  META_LOG="$REC_BFN.meta.jsonl" lurkrec_metadata_log_helper &
-  local META_DATA_LOG_HELPER_PID=$!
-  disown "$META_DATA_LOG_HELPER_PID"
+  META_LOG="$REC_BFN.meta.jsonl" lurkrec_metadata_log_helper & disown $!
+  BG_HELPER_PIDS+=" $!"
+
+  lurkrec_file_growth_watchdog & disown $!
+  BG_HELPER_PIDS+=" $!"
 
   wait "$REC_PID"; local REC_RV=$?
-  kill -HUP -- "$META_DATA_LOG_HELPER_PID" 2>/dev/null || true
+  kill -HUP -- $BG_HELPER_PIDS 2>/dev/null || true
 
   return "$REC_RV"
 }
@@ -273,6 +282,49 @@ function lurkrec_metadata_log_helper () {
       ) >>"$META_LOG" || true
     sleep "$INTV" || return 4$(
       echo E: $FUNCNAME: "Failed to sleep for '$INTV'" >&2)
+  done
+}
+
+
+function lurkrec_file_growth_watchdog () {
+  sleep 2m
+  local TRACE='File growth watchdog:'
+  local INTV_SEC=5
+  local TOL_SEC="$WATCHDOG_WITH_ADS_TOL_SEC"
+  echo -n D: $TRACE "Watching $REC_VIDEO_DEST for recorder $REC_PID "
+  if [ -n "$SKIP_ADS" ]; then
+    echo -n 'skipping ads'
+    TOL_SEC="$WATCHDOG_SKIP_ADS_TOL_SEC"
+  else
+    echo -n 'including ads'
+  fi
+  echo " => tolerate $TOL_SEC consecutive seconds of file size stagnation." \
+    "Will check every $INTV_SEC sec."
+
+  local STREAK=0
+  # We count our slept seconds ourselves rather than using $SECONDS, because
+  # the time spent for non-sleep tasks could accumulate enough to cause timer
+  # drift against $SECONDS, thus making the comparison trigger too-early.
+
+  local PREV_SZ=0 SZ= DELTA=
+  while sleep "$INTV_SEC"s; do
+    if ! kill -0 "$REC_PID" 2>/dev/null; then
+      echo D: $TRACE "Recorder seems to have quit."
+      return 0
+    fi
+    SZ="$(stat --format %s -- "$REC_VIDEO_DEST")"
+    [ -f "$REC_VIDEO_DEST" ] || return 4$(
+      echo E: $TRACE: "File seems to have vanished: '$REC_VIDEO_DEST'" >&2)
+    [ -n "$REC_VIDEO_DEST" ] || continue$(
+      echo W: $TRACE: "Failed to detect file size of '$REC_VIDEO_DEST'" >&2)
+    (( DELTA = SZ - PREV_SZ ))
+    if [ "$DELTA" == 0 ]; then (( STREAK += INTV_SEC )); else STREAK=0; fi
+    # echo D: $TRACE "+ $DELTA = $SZ streak $STREAK / $TOL_SEC"
+    PREV_SZ="$SZ"
+    [ "$STREAK" -le "$TOL_SEC" ] && continue
+    echo W: $TRACE "Bark, bark!" >&2
+    kill -HUP "$REC_PID"
+    return 0
   done
 }
 
