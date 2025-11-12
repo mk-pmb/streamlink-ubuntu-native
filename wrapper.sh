@@ -7,6 +7,11 @@ function sl_wrap () {
   local SELFPATH="$(readlink -m -- "$BASH_SOURCE"/..)"
   # cd -- "$SELFPATH" || return $?
 
+  local VSL="$SELFPATH/venv/bin/streamlink"
+  [ ! -x "$VSL" ] || exec "$VSL" "$@" ||
+    echo W: "streamlink wrapper: Failed to exec '$VSL' (rv=$?)," \
+      "will try the regular invocation as fallback." >&2
+
   local SL_REPO="$STREAMLINK_REPO_PATH"
   [ -n "$SL_REPO" ] || SL_REPO="$SELFPATH/sl-repo"
   local SL_MAIN="$SL_REPO/src/streamlink_cli/main.py"
