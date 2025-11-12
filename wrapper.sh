@@ -30,7 +30,7 @@ function sl_core () {
   PYPA+=":$SELFPATH/shims"
   PYPA+=":$SELFPATH/upgrades/lib"
   export PYTHONPATH="$PYPA"
-  python3 -m streamlink_cli "$@" || return $?
+  exec python3 -m streamlink_cli "$@" || return $?
 }
 
 
