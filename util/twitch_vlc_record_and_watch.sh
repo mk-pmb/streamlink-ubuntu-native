@@ -152,9 +152,7 @@ function twrec_rec_core () {
   local SL_CMD=(
     streamlink
     --ringbuffer-size "${CFG[bufsz_kb]}"K
-    --twitch-disable-hosting
     ${CFG[adblock]}
-    --twitch-disable-reruns
     # --twitch-api-header Client-ID=ue6666qo983tsx6so1t0vnawi233wa
     # --twitch-low-latency
     --stdout

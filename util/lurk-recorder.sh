@@ -79,8 +79,6 @@ function lurkrec_record () {
     $PROXY_PROG
     $SL_PROG_NAME
     --ringbuffer-size "$BUFSZ"
-    --twitch-disable-hosting
-    --twitch-disable-reruns
     ${SKIP_ADS/#'+'/--twitch-disable-ads}
     --stdout
     twitch.tv/"${CHAN,,}"

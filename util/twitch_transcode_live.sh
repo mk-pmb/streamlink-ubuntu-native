@@ -88,8 +88,6 @@ function twitch_transcode_live () {
 
   local RECV_OPT=(
     # --ringbuffer-size 4K
-    --twitch-disable-hosting
-    --twitch-disable-reruns
     --stream-url
     twitch.tv/"$CHAN"
     "$RECV_QUALI"
