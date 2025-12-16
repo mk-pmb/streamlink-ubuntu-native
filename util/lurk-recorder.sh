@@ -12,6 +12,9 @@ function lurkrec_cli_main () {
     echo E: "Channel name (arg 1) must start with a letter!" \
       "(Options go behind.)" >&2)
   CHAN="${CHAN%/}"
+  local SUBDIR="$CHAN"
+  [ "${CHAN/,/}" == "$CHAN" ] || CHAN="${CHAN#*,}${CHAN%%,*}"
+  CHAN="${CHAN,,}"
 
   [ "${EPOCHSECONDS:-0}" -ge 1 ] || return 4$(
     echo E: "Upgrade your bash shell to version 5 or later." >&2)
@@ -57,7 +60,7 @@ function lurkrec_cli_main () {
   local WATCHDOG_WITH_ADS_TOL_SEC=30
   local WATCHDOG_SKIP_ADS_TOL_SEC=$(( 8 * 60 ))
   local RC=
-  for RC in '' "$CHAN"/; do
+  for RC in '' "$SUBDIR"/; do
     for RC in "$RC"{.,}; do
       for RC in "$RC"twitch-lurk.rc; do
         [ ! -f "$RC" ] || source -- "$RC" || return $?
@@ -72,10 +75,10 @@ function lurkrec_cli_main () {
 function lurkrec_record () {
   lurkrec_validate_weekdays_option || return $?
   VAL="${CFG[earliest]}"
-  [ -z "$VAL" ] || gxctd "$VAL" "twitch lurk chan=$CHAN $1" || return $?
+  [ -z "$VAL" ] || gxctd "$VAL" "twitch lurk chan=$SUBDIR $1" || return $?
 
-  mkdir --parents -- "$CHAN"
-  [ -d "$CHAN" ] || return 4$(echo E: "Not a directory: $1" >&2)
+  mkdir --parents -- "$SUBDIR"
+  [ -d "$SUBDIR" ] || return 4$(echo E: "Not a directory: $1" >&2)
 
   local REC_CMD=(
     $PROXY_PROG
@@ -83,7 +86,7 @@ function lurkrec_record () {
     --ringbuffer-size "$BUFSZ"
     ${SKIP_ADS/#'+'/--twitch-disable-ads}
     --stdout
-    twitch.tv/"${CHAN,,}"
+    twitch.tv/"$CHAN"
     "$QUALI"
     )
 
@@ -99,7 +102,7 @@ function lurkrec_record () {
     [ "$DATE_NOW" == "$LOGF_DATE" ] || LOGF_CUR=
     if [ -z "$LOGF_CUR" ]; then # rotate the log
       LOGF_DATE="$DATE_NOW"
-      LOGF_CUR="$CHAN/log.$LOGF_DATE-$(
+      LOGF_CUR="$SUBDIR/log.$LOGF_DATE-$(
         printf -- '%(%H%M%S)T' "$CHECK_UTS")-$$.txt"
       echo D: "Switching to new logfile: $LOGF_CUR"
       exec >>"$LOGF_CUR"
@@ -203,7 +206,7 @@ function lurkrec_check_weekdays_option () {
 function lurkrec_try_recording () {
   lurkrec_check_weekdays_option || return $?
   local REC_BFN=
-  printf -v REC_BFN -- '%s/%(%y%m%d-%H%M%S)T.rec' "$CHAN" "$CHECK_UTS"
+  printf -v REC_BFN -- '%s/%(%y%m%d-%H%M%S)T.rec' "$SUBDIR" "$CHECK_UTS"
   REC_VIDEO_DEST="$REC_BFN$REC_VIDEO_SUFFIX"
   echo D: "${REC_CMD[*]} >'$REC_VIDEO_DEST'"
   >"$REC_VIDEO_DEST" || return $?$(
@@ -226,7 +229,7 @@ function lurkrec_try_recording () {
 
 
 function lurkrec_metadata () {
-  local URL="twitch.tv/${CHAN,,}"
+  local URL="twitch.tv/$CHAN"
   local SL_CMD=(
     $PROXY_PROG
     $SL_PROG_NAME
