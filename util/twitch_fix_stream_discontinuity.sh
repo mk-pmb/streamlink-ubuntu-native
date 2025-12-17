@@ -2,10 +2,19 @@
 # -*- coding: utf-8, tab-width: 2 -*-
 
 
-function video_codec_fix_twitch () {
+function vcfr_cli_main () {
   export LANG{,UAGE}=en_US.UTF-8  # make error messages search engine-friendly
-  exec </dev/null
+  local TASK='autofix'
+  case "$1" in
+    --identify | \
+    --task=* ) TASK="${1#--}"; TASK="${TASK#*=}"; shift;;
+  esac
+  vcft_"$TASK" "$@"; return $?
+}
 
+
+function vcft_autofix () {
+  exec </dev/null
   [ "$1" == --netfs ] && shift || df --local . >/dev/null || return 4$(
     echo E: 'flinching from operating on a remote filesystem.' \
       'Use --netfs as first argument to override.' >&2)
@@ -36,39 +45,22 @@ function video_codec_fix_twitch () {
     esac
     BROKEN_BFN+="$SUF_BROKEN"
 
-    VAL="$(head --bytes=64 -- "$ITEM" | tr '\0' .)"
+    VAL="$(vcft_identify "$ITEM")"
+    VAL="${VAL#"$ITEM"$'\t'}"
     case "$VAL" in
-      G@.?..* ) ;; # Twitch stream header 2024-12-27
-
-      ?PNG$'\r\n'* | \
-      *JFIF* | \
-      $'\n'* | \
-      $'\r\n'* | \
-      $'\xEF\xBB\xBF'* | \
-      __probably_not_a_video__ )
-        echo D: skip "file that seems to not be a video: $ITEM"
+      '' ) continue;;
+      'twitch_stream, as_seen_on='* ) ;;
+      'isom, lamestart' ) ;;
+      'isom, faststart' )
+        echo D: skip "already faststart, file: $ITEM"
         continue;;
-
-      '... ftypisom...'* | \
-      *'isomiso2avc1mp41'* | \
-      *'isomiso2mp41'* | \
-      __looks_like_ffmpeg_reencoded__ )
-        # NB: The "avc1" does not mean the video codec.
-        echo D: skip "file that looks like it was encoded using ffmpeg: $ITEM"
-        continue;;
-
-      ...?ftypmp42....isommp42* | \
-      __looks_like_youtube_encoded__ )
-        echo D: skip "file that looks like it was encoded by YouTube: $ITEM"
-        continue;;
-
-      ...?ftyp* ) ;;
       * )
-        echo D: skip "file with no ftyp header: $ITEM"
+        echo D: skip "strange type: $VAL, file: $ITEM"
         continue;;
     esac
 
-    VAL="$(quick_cheap_fuser "$ITEM")" || return $?
+    VAL="${CHEAP_FUSER_CMD:-fuser-file-cheap-quick}"
+    VAL="$("$VAL" "$ITEM")" || return $?
     [ -z "$VAL" ] || continue$(echo W: >&2 \
       "skip: probably in use by PID ${VAL//$'\n'/, }: $ITEM")
 
@@ -84,32 +76,14 @@ function video_codec_fix_twitch () {
     $MV "$ITEM" "$VAL" || return $?
     OUT_DEST="$ITEM"
     OUT_DEST="${OUT_DEST/%.ts/.mp4}"
-    ffmpeg -hide_banner -i "$VAL" -c copy "$OUT_DEST" || return $?$(
+    ITEM=
+    case "$OUT_DEST" in
+      *.mp4 ) ITEM='-movflags faststart';;
+    esac
+    ffmpeg -hide_banner -i "$VAL" -c copy $ITEM "$OUT_DEST" || return $?$(
       echo E: "Failed to convert (rv=$?) $VAL" >&2)
     $MV "$VAL" "$BROKEN_BFN.done.$INPUT_SUF" || return $?
   done
-}
-
-
-function quick_cheap_fuser () {
-  # I'd use the real `fuser` command but unfortunately it often gets stuck
-  # for minutes when I have totally unrelated sshfs mounts.
-  # Stuck so hard not even `kill -SIGKILL` can help.
-  # So in comparison, overall, this hack here is more reliable in my case.
-  local REL= ABS=
-  local FIND=(
-    find /proc
-    -mindepth 3 -maxdepth 3 -path "/proc/[0-9]*/fd/[0-9]*" -type l
-    '(' -false
-    )
-  for REL in "$@"; do
-    ABS="$(readlink -f -- "$REL")"
-    [ -f "$ABS" ] || return 4$(echo E: $FUNCNAME: >&2 \
-      "Cannot determine absolute path of: $REL")
-    FIND+=( -o -lname "$ABS" )
-  done
-  FIND+=( ')' )
-  "${FIND[@]}" 2>/dev/null | cut -d / -sf 3 | sort -gu || true
 }
 
 
@@ -126,4 +100,67 @@ function check_avail_disk_space () {
 }
 
 
-video_codec_fix_twitch "$@"; exit $?
+function vcft_decode_big_endian () {
+  # expected arguments: offset (bytes), length (bytes)
+  od -t d4 -An --endian=big -j "$1" -N "$2" -- "$3" | tr -cd 0-9
+}
+
+
+function vcft_identify () {
+  while [ "$#" -ge 2 ]; do "$FUNCNAME" "$1" || return $?; shift; done
+  local SRC="$1"
+  echo -n "$SRC"$'\t'
+  local REREAD="echo $(head --bytes=48 -- "$SRC" | base64) | base64 -d"
+  # ^-- Stash away so we can cope with a pipe as input.
+  #     We don't need quotes around $() because because base64 only uses
+  #     /+= as special characters and they are safe for echo arguments.
+
+  local BUF="$(eval "$REREAD" | tr '\0\177-\377' .)"
+  # Conflating the null byte with a dot can cause false positives but seems
+  # good enough for realistic usecases.
+  case "$BUF" in
+    G@.?..* | \
+    . ) echo 'twitch_stream, as_seen_on=2024-12-27'; return 0;;
+
+    ...?ftypmp42....isommp42* | \
+    . ) echo 'youtube, as_seen_on=2024-12-27'; return 0;;
+
+    ?PNG$'\r\n'* | \
+    *JFIF* | \
+    . ) echo 'probably_image_file'; return 0;;
+
+    $'\n'* | \
+    $'\r\n'* | \
+    $'\xEF\xBB\xBF'* | \
+    . ) echo 'probably_text_file'; return 0;;
+
+    ..??ftypisom..* ) ;;
+    * ) echo 'probably_not_mp4_video, no_ftyp_box'; return 0;;
+  esac
+
+  # Previous case fell through, so it's an isom file.
+  local OFFSET=0 BOX_LEN=0
+  local BOX_TYPE= HAD_BOX_TYPES=
+  while [ "$OFFSET" -lt "${#BUF}" ]; do
+    BOX_LEN="$(eval "$REREAD" | vcft_decode_big_endian $OFFSET 4 -)"
+    BOX_TYPE="${BUF:$OFFSET+4:4}"
+    HAD_BOX_TYPES+=",$BOX_TYPE,"
+    # printf -- 'D: %q\t%s\t%q\n' "$BOX_TYPE" "$BOX_LEN" "$HAD_BOX_TYPES"
+    (( OFFSET += BOX_LEN ))
+  done
+  HAD_BOX_TYPES="${HAD_BOX_TYPES//,free,/}"
+  case "$HAD_BOX_TYPES" in
+    ,ftyp,,moov,* ) echo 'isom, faststart';;
+    ,ftyp,,dat* ) echo 'isom, lamestart';;
+    * ) echo "isom, unknown=$HAD_BOX_TYPES";;
+  esac
+}
+
+
+
+
+
+
+
+
+vcfr_cli_main "$@"; exit $?

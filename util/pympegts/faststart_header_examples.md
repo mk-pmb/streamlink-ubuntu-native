@@ -47,6 +47,19 @@ head --bytes=64 -- faststart.mp4 | xxd -c 4 -g 1 | cut --bytes=5-
 ```
 
 
+
+### Fruitless ffprobe attempts
+
+Documenting so you don't need to try and fail yourself:
+
+```text
+$ ffprobe -v warning -show_entries format_tags=faststart -- faststart.mp4
+[FORMAT]
+[/FORMAT]
+```
+
+
+
 Example of a video without faststart
 ------------------------------------
 
