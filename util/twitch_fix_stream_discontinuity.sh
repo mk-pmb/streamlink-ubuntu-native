@@ -157,8 +157,9 @@ function vcft_identify () {
   HAD_BOX_TYPES="${HAD_BOX_TYPES//,free,/}"
   case "$HAD_BOX_TYPES" in
     ,ftyp,,moov,* ) echo 'isom, faststart';;
+    ,ftyp,,mdat,* | \
     ,ftyp,,dat* ) echo 'isom, lamestart';;
-    * ) echo "isom, unknown=$HAD_BOX_TYPES";;
+    * ) echo "isom, unknown='$HAD_BOX_TYPES'";;
   esac
 }
 
