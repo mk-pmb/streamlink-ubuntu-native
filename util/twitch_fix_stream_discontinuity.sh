@@ -19,6 +19,9 @@ function vcft_autofix () {
     echo E: 'flinching from operating on a remote filesystem.' \
       'Use --netfs as first argument to override.' >&2)
 
+  local FLAGS=,
+  if [ "$1" == --same-time ]; then FLAGS+="${1#--},"; shift; fi
+
   [ "$1" != -- ] || shift
   local SUF_BROKEN='.b0rken-orig'
   local SUF_FIXED='.fixed'
@@ -82,6 +85,9 @@ function vcft_autofix () {
     esac
     ffmpeg -hide_banner -i "$VAL" -c copy $ITEM "$OUT_DEST" || return $?$(
       echo E: "Failed to convert (rv=$?) $VAL" >&2)
+    case "$FLAGS" in
+      *,same-time,* ) touch --reference="$VAL" -- "$OUT_DEST" || true;;
+    esac
     $MV "$VAL" "$BROKEN_BFN.done.$INPUT_SUF" || return $?
   done
 }
