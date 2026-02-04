@@ -15,9 +15,11 @@ def snake_case(orig):
             if prev == ch: continue
         buf += ch
         prev = ch
+    buf = buf.strip('_')
     return buf
 
 
 
 
 
+# scroll
