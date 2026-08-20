@@ -23,7 +23,10 @@ function lurkrec_cli_main () {
   local ORIG_STDOUT_FD= ORIG_STDERR_FD=
   exec {ORIG_STDOUT_FD}>&1
   exec {ORIG_STDERR_FD}>&2
+  local LOGF_FD=
   exec {LOGF_FD}</dev/null # just find the next unused FD.
+
+  local NAMED_SLEEP_PIPE= # To avoid accidentally inheriting that variable.
 
   local -A CFG=(
     [task]=record
@@ -45,6 +48,7 @@ function lurkrec_cli_main () {
     return 4
   done
 
+  local MAIN_PID="$BASHPID"
   local PROXY_PROG=
   local SL_PROG_NAME='streamlink'
   local LURK_INTERVAL=15m
@@ -53,6 +57,8 @@ function lurkrec_cli_main () {
   # ^-- Very short stream = probably just a glitch = retry sooner than usual
   local FAIL_STREAM_RETRY_DELAY=30s
   local FAIL_STREAM_MAX_RETRYS=10
+  local WATCHDOG_INIT_DELAY=2m
+  local WATCHDOG_DEFAULT_INTV_SEC=5
   local BUFSZ=4K
   local QUALI="${LURKREC_QUALI:-360p30,360p,worst}"
   local REC_VIDEO_SUFFIX='.ts'
@@ -73,16 +79,59 @@ function lurkrec_cli_main () {
 
 
 function lurkrec_named_sleep () {
-  local SLEEP_NAME="$1"; shift
-  : <(exec -a {twrec-lurk-"$SLEEP_NAME"-,}sleep "$@"); wait $!; return $?
-  # Forking as I/O redirect makes the shell ignore the exit status of the
-  # child process, i.e. not print the signal name. We could also achive
-  # that with `disown`, but then we couldn't `wait`. Or we could force a
-  # double subshell, but that would create two heavy forks of our process.
+  local WAIT_NAME="$1"; shift
+  local WAIT_TIME="$1"; shift
+
+  local VAL="$WAIT_TIME"
+  VAL="${VAL/%w/*7d}"
+  VAL="${VAL/%d/*24h}"
+  VAL="${VAL/%h/*60m}"
+  VAL="${VAL/%m/*60}"
+  VAL="${VAL%s}"
+  let VAL=0 VAL="$VAL"
+  [ "$VAL" -ge 1 ] || return 4$(
+    echo E: $FUNCNAME: "$WAIT_NAME: Unsupported time format: '$WAIT_TIME'" >&2)
+  WAIT_TIME="$VAL"
+
+  local WAIT_IN_FD=
+  exec {WAIT_IN_FD}> >(
+    # Forking as I/O redirect makes the shell ignore the exit status of the
+    # child process, i.e. not print the signal name. We could also achive
+    # that with `disown`, but then we couldn't `wait`. Or we could force a
+    # double subshell, but that would create two heavy forks of our process.
+
+    exec 5<&0
+    [ -z "$NAMED_SLEEP_PIPE" ] || exec 5<"$NAMED_SLEEP_PIPE"
+    # Usually we have the named sleeper read from stdin and make that a
+    # pipe for which we hold write access, effectively blocking it until
+    # the timeout is reached, an overly complicated way to just sleep.
+    # The benefit is that we can easily switch to waiting for any other
+    # pipe instead, allowing the other side to wake us at any time.
+    # Most importantly, we'll wake as soon as the last pipe-writer dies.
+    #
+    # We supply the read command via the input pipe in order to achieve
+    # a clean-looking command line in the process list.
+    exec -a "twrec-lurk-$WAIT_NAME-wait" bash
+    )
+  [ -n "$WAIT_IN_FD" ] || return 4$(
+    echo E: $FUNCNAME: "$WAIT_NAME: Failed to fork!" >&2)
+  echo "IFS= read -t $WAIT_TIME"' -u 5; exit $?' >&"$WAIT_IN_FD"
+  wait $!
+  local WAIT_RV=$?
+  eval "exec $WAIT_IN_FD<&-"
+  if [ "$WAIT_RV" -ge 128 ]; then
+    # echo D: $FUNCNAME: "$WAIT_NAME: timeout."
+    return 0
+  fi
+  # echo W: $FUNCNAME: "$WAIT_NAME: failed early: rv=$WAIT_RV" >&2
+  return $WAIT_RV
 }
 
 
 function lurkrec_record () {
+  [ "$$" == "$BASHPID" ] && [ "$$" == "$MAIN_PID" ] || return 4$(
+    echo E: $FUNCNAME: 'Unexpected invocation by exotic control flow!' >&2)
+
   lurkrec_validate_weekdays_option || return $?
   # ^-- Fatal because syntax error in schedule is unrecoverable:
   #   We'll never (in this run) know whether at that moment we're allowed
@@ -118,11 +167,13 @@ function lurkrec_record () {
     if [ -z "$LOGF_CUR" ]; then # rotate the log
       LOGF_DATE="$DATE_NOW"
       LOGF_CUR="$SUBDIR/log.$LOGF_DATE-$(
-        printf -- '%(%H%M%S)T' "$CHECK_UTS")-$$.txt"
+        printf -- '%(%H%M%S)T' "$CHECK_UTS")-$MAIN_PID.txt"
       echo D: "Switching to new logfile: $LOGF_CUR"
       exec >>"$LOGF_CUR"
       eval "exec $LOGF_FD>&1"
-      exec &> >(exec "$SELFPATH"/logtee.sh "/proc/$$/fd/$LOGF_FD" \
+      # eval "echo D: 'Switching to new logfile: New FDs:' >&$ORIG_STDOUT_FD"
+      eval "ls -al -- /proc/$MAIN_PID/fd/ >&$ORIG_STDOUT_FD"
+      exec &> >(exec "$SELFPATH"/logtee.sh "/proc/$MAIN_PID/fd/$LOGF_FD" \
         >&"$LOGF_FD" 2>&"$ORIG_STDOUT_FD")
       echo D: "Start new logfile: $LOGF_CUR"
     fi
@@ -222,21 +273,33 @@ function lurkrec_try_recording () {
   printf -v REC_BFN -- '%s/%(%y%m%d-%H%M%S)T.rec' "$SUBDIR" "$CHECK_UTS"
   REC_VIDEO_DEST="$REC_BFN$REC_VIDEO_SUFFIX"
   echo D: "${REC_CMD[*]} >'$REC_VIDEO_DEST'"
+  local REC_ALIVE_PIPE=4
   >"$REC_VIDEO_DEST" || return $?$(
     echo E: "Failed to record: Cannot create file: $REC_VIDEO_DEST" >&2)
-  exec "${REC_CMD[@]}" >"$REC_VIDEO_DEST" &
+  ( # Unfortunately bash doesn't expand variables in the FD number slot
+    # of the redirect notation, so we need an eval here:
+    eval "exec $REC_ALIVE_PIPE<> <(:)"
+    exec "${REC_CMD[@]}" >"$REC_VIDEO_DEST"
+  ) &
   local REC_PID=$!
-  local BG_HELPER_PIDS=
+  REC_ALIVE_PIPE="/proc/$REC_PID/fd/$REC_ALIVE_PIPE"
+  local NAMED_SLEEP_PIPE="$REC_ALIVE_PIPE"
+  local TRACE="Recording attempt $REC_PID:"
 
-  META_LOG="$REC_BFN.meta.jsonl" lurkrec_metadata_log_helper & disown $!
-  BG_HELPER_PIDS+=" $!"
+  : >(META_LOG="$REC_BFN.meta.jsonl" lurkrec_metadata_log_helper)
+  local META_LOG_PID="$!"
 
-  lurkrec_file_growth_watchdog & disown $!
-  BG_HELPER_PIDS+=" $!"
+  : >(lurkrec_file_growth_watchdog)
+  local WATCHDOG_PID="$!"
 
   wait "$REC_PID"; local REC_RV=$?
-  kill -HUP -- $BG_HELPER_PIDS 2>/dev/null || true
 
+  echo D: $TRACE "Wait for watchdog to quit: pid $WATCHDOG_PID"
+  wait "$WATCHDOG_PID"
+  echo D: $TRACE "Wait for meta logger to quit: pid $META_LOG_PID"
+  wait "$META_LOG_PID"
+
+  echo D: $TRACE "Done, rv=$REC_RV."
   return "$REC_RV"
 }
 
@@ -303,9 +366,15 @@ function lurkrec_metadata_log_helper () {
 
 
 function lurkrec_file_growth_watchdog () {
-  lurkrec_named_sleep watchdog-start 2m
-  local TRACE='File growth watchdog:'
-  local INTV_SEC=5
+  local WATCHDOG_PID="$BASHPID"
+  local TRACE="File growth watchdog (pid $WATCHDOG_PID):"
+
+  if ! lurkrec_named_sleep watchdog-init $WATCHDOG_INIT_DELAY ; then
+    echo D: $TRACE "Recorder $REC_PID vanished early."
+    return 0
+  fi
+
+  local INTV_SEC="$WATCHDOG_DEFAULT_INTV_SEC"
   local TOL_SEC="$WATCHDOG_WITH_ADS_TOL_SEC"
   echo -n D: $TRACE "Watching $REC_VIDEO_DEST for recorder $REC_PID "
   if [ -n "$SKIP_ADS" ]; then
