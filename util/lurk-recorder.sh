@@ -72,6 +72,16 @@ function lurkrec_cli_main () {
 }
 
 
+function lurkrec_named_sleep () {
+  local SLEEP_NAME="$1"; shift
+  : <(exec -a {twrec-lurk-"$SLEEP_NAME"-,}sleep "$@"); wait $!; return $?
+  # Forking as I/O redirect makes the shell ignore the exit status of the
+  # child process, i.e. not print the signal name. We could also achive
+  # that with `disown`, but then we couldn't `wait`. Or we could force a
+  # double subshell, but that would create two heavy forks of our process.
+}
+
+
 function lurkrec_record () {
   lurkrec_validate_weekdays_option || return $?
   VAL="${CFG[earliest]}"
@@ -135,11 +145,11 @@ function lurkrec_record () {
         '=> Retry instantly.'
     elif [ "$FAIL_STREAM_RMN_RETRYS" -ge 1 ]; then
       echo "=> Wait $FAIL_STREAM_RETRY_DELAY."
-      sleep "$FAIL_STREAM_RETRY_DELAY" || return $?
+      lurkrec_named_sleep fail-retry "$FAIL_STREAM_RETRY_DELAY" || return $?
       (( FAIL_STREAM_RMN_RETRYS -= 1 ))
     else
       echo "=> Off-stream lurk. => wait $LURK_INTERVAL."
-      sleep "$LURK_INTERVAL" || return $?
+      lurkrec_named_sleep off-stream "$LURK_INTERVAL" || return $?
     fi
   done
 
@@ -251,7 +261,7 @@ function lurkrec_metadata_log_helper () {
   [ -f "$REC_VIDEO_DEST" ] || return 4$(echo E: $FUNCNAME: >&2 \
     "REC_VIDEO_DEST='$REC_VIDEO_DEST' is not a regular file!")
   while kill -0 -- "$REC_PID" 2>/dev/null && [ ! -s "$REC_VIDEO_DEST" ]; do
-    sleep 1s
+    lurkrec_named_sleep loghelper-init 1s
   done
 
   local NOW= META= INTV="$METADATA_INTERVAL"
@@ -283,14 +293,14 @@ function lurkrec_metadata_log_helper () {
         * ) printf '"@": %s,' "$NOW"; echo "${META#'{'}";;
       esac
       ) >>"$META_LOG" || true
-    sleep "$INTV" || return 4$(
+    lurkrec_named_sleep log-helper "$INTV" || return 4$(
       echo E: $FUNCNAME: "Failed to sleep for '$INTV'" >&2)
   done
 }
 
 
 function lurkrec_file_growth_watchdog () {
-  sleep 2m
+  lurkrec_named_sleep watchdog-start 2m
   local TRACE='File growth watchdog:'
   local INTV_SEC=5
   local TOL_SEC="$WATCHDOG_WITH_ADS_TOL_SEC"
@@ -310,7 +320,7 @@ function lurkrec_file_growth_watchdog () {
   # drift against $SECONDS, thus making the comparison trigger too-early.
 
   local PREV_SZ=0 SZ= DELTA=
-  while sleep "$INTV_SEC"s; do
+  while lurkrec_named_sleep watchdog "$INTV_SEC"s; do
     if ! kill -0 "$REC_PID" 2>/dev/null; then
       echo D: $TRACE "Recorder seems to have quit."
       return 0

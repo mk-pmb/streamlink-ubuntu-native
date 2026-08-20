@@ -179,7 +179,8 @@ function twrec_rec_core () {
   if [ -n "${CFG[core_delay]}" ]; then
     printf -- 'D: core delay start: %(%F %T)T, delay: %s\n' \
       -1 "${CFG[core_delay]}"
-    sleep "${CFG[core_delay]}" || return $?
+    : <(exec -a {twrec-core-delay-,}sleep "${CFG[core_delay]}"
+      ); wait $! || return $?
     printf -- 'D: core delay end  : %(%F %T)T\n' -1
   fi
 
@@ -272,7 +273,8 @@ function twrec_stubbornly_retry_every () {
     "$@" && return 0
     printf '%(%F %T)T %s\n' -1 \
       "E: failed (rv=$?), will retry in $INTV: $*"
-    sleep "$INTV" || return $?
+    : <(exec -a {twrec-fail-retry-,}sleep "$INTV"
+      ); wait $! || return $?
   done
 }
 
