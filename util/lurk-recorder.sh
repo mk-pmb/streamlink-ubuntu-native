@@ -152,8 +152,6 @@ function lurkrec_record () {
       lurkrec_named_sleep off-stream "$LURK_INTERVAL" || return $?
     fi
   done
-
-  kill -HUP "$META_DATA_LOG_HELPER_PID" 2>/dev/null || true
 }
 
 
