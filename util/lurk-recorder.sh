@@ -23,6 +23,7 @@ function lurkrec_cli_main () {
   local ORIG_STDOUT_FD= ORIG_STDERR_FD=
   exec {ORIG_STDOUT_FD}>&1
   exec {ORIG_STDERR_FD}>&2
+  local LOGF_FD=
   exec {LOGF_FD}</dev/null # just find the next unused FD.
 
   local -A CFG=(
@@ -45,6 +46,7 @@ function lurkrec_cli_main () {
     return 4
   done
 
+  local MAIN_PID="$BASHPID"
   local PROXY_PROG=
   local SL_PROG_NAME='streamlink'
   local LURK_INTERVAL=15m
@@ -83,6 +85,7 @@ function lurkrec_named_sleep () {
 
 
 function lurkrec_record () {
+  local REC_PID="$BASHPID"
   lurkrec_validate_weekdays_option || return $?
   VAL="${CFG[earliest]}"
   [ -z "$VAL" ] || gxctd "$VAL" "twitch lurk chan=$SUBDIR $1" || return $?
@@ -113,11 +116,12 @@ function lurkrec_record () {
     if [ -z "$LOGF_CUR" ]; then # rotate the log
       LOGF_DATE="$DATE_NOW"
       LOGF_CUR="$SUBDIR/log.$LOGF_DATE-$(
-        printf -- '%(%H%M%S)T' "$CHECK_UTS")-$$.txt"
+        printf -- '%(%H%M%S)T' "$CHECK_UTS")-$REC_PID.txt"
       echo D: "Switching to new logfile: $LOGF_CUR"
       exec >>"$LOGF_CUR"
       eval "exec $LOGF_FD>&1"
-      exec &> >(exec "$SELFPATH"/logtee.sh "/proc/$$/fd/$LOGF_FD" \
+      ls -al -- /proc/$MAIN_PID/fd/ >&"$ORIG_STDOUT_FD"
+      exec &> >(exec "$SELFPATH"/logtee.sh "/proc/$MAIN_PID/fd/$LOGF_FD" \
         >&"$LOGF_FD" 2>&"$ORIG_STDOUT_FD")
       echo D: "Start new logfile: $LOGF_CUR"
     fi
@@ -219,16 +223,22 @@ function lurkrec_try_recording () {
   printf -v REC_BFN -- '%s/%(%y%m%d-%H%M%S)T.rec' "$SUBDIR" "$CHECK_UTS"
   REC_VIDEO_DEST="$REC_BFN$REC_VIDEO_SUFFIX"
   echo D: "${REC_CMD[*]} >'$REC_VIDEO_DEST'"
+  local REC_ALIVE_PIPE=4
   >"$REC_VIDEO_DEST" || return $?$(
     echo E: "Failed to record: Cannot create file: $REC_VIDEO_DEST" >&2)
-  exec "${REC_CMD[@]}" >"$REC_VIDEO_DEST" &
+  ( # Unfortunately bash doesn't expand variables in the FD number slot
+    # of the redirect notation, so we need an eval here:
+    eval "exec $REC_ALIVE_PIPE<> <(:)"
+    exec "${REC_CMD[@]}" >"$REC_VIDEO_DEST"
+  ) &
   local REC_PID=$!
+  REC_ALIVE_PIPE="/proc/$REC_PID/fd/$REC_ALIVE_PIPE"
   local BG_HELPER_PIDS=
 
-  META_LOG="$REC_BFN.meta.jsonl" lurkrec_metadata_log_helper & disown $!
+  : >(META_LOG="$REC_BFN.meta.jsonl" lurkrec_metadata_log_helper)
   BG_HELPER_PIDS+=" $!"
 
-  lurkrec_file_growth_watchdog & disown $!
+  : >(lurkrec_file_growth_watchdog)
   BG_HELPER_PIDS+=" $!"
 
   wait "$REC_PID"; local REC_RV=$?
@@ -300,8 +310,18 @@ function lurkrec_metadata_log_helper () {
 
 
 function lurkrec_file_growth_watchdog () {
-  lurkrec_named_sleep watchdog-start 2m
-  local TRACE='File growth watchdog:'
+  local WATCHDOG_PID="$BASHPID"
+  local TRACE="File growth watchdog (pid $WATCHDOG_PID):"
+
+  # lurkrec_named_sleep__nowait watchdog-start 5s
+  local VAL=
+  read -rst 120 VAL <"$REC_ALIVE_PIPE"
+  if ! kill -0 "$REC_PID" 2>/dev/null; then
+    echo -n D: $TRACE "Recorder $REC_PID vanished early."
+    return 0
+  fi
+
+
   local INTV_SEC=5
   local TOL_SEC="$WATCHDOG_WITH_ADS_TOL_SEC"
   echo -n D: $TRACE "Watching $REC_VIDEO_DEST for recorder $REC_PID "
