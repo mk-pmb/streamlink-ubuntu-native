@@ -18,8 +18,11 @@
 
 function logtee () {
   local STDOUT_SAME_AS="$1"
-  [ "$STDOUT_SAME_AS" -ef /proc/self/fd/1 ] || return 4$(echo E: >&2 \
-    'Destination indicator must initially point to the same thing as stdout.')
+  [ "$STDOUT_SAME_AS" -ef /proc/self/fd/1 ] || return 4$(
+    echo E: "Destination indicator (CLI arg 1 = $(
+      stat -c '%F %N' -- "$STDOUT_SAME_AS" 2>&1
+      )) must initially point to the same thing as stdout ($(
+      stat -c '%F %N' -- /proc/self/fd/1 2>&1))." >&2)
   local LN= RV=
   while true; do
     LN=
