@@ -84,6 +84,11 @@ function lurkrec_named_sleep () {
 
 function lurkrec_record () {
   lurkrec_validate_weekdays_option || return $?
+  # ^-- Fatal because syntax error in schedule is unrecoverable:
+  #   We'll never (in this run) know whether at that moment we're allowed
+  #   to bother the stream servers and/or use the credentials that may be
+  #   set in the streamlink config.
+
   VAL="${CFG[earliest]}"
   [ -z "$VAL" ] || gxctd "$VAL" "twitch lurk chan=$SUBDIR $1" || return $?
 
