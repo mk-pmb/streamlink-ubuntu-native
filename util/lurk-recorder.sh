@@ -286,7 +286,7 @@ function lurkrec_try_recording () {
   local NAMED_SLEEP_PIPE="$REC_ALIVE_PIPE"
   local TRACE="Recording attempt $REC_PID:"
 
-  : >(META_LOG="$REC_BFN.meta.jsonl" lurkrec_metadata_log_helper)
+  : >(lurkrec_metadata_log_helper)
   local META_LOG_PID="$!"
 
   : >(lurkrec_file_growth_watchdog)
@@ -337,31 +337,42 @@ function lurkrec_metadata_log_helper () {
   local PREV="$ERROR_PLACEHOLDER"
   local SHORT_PREV="$PREV"
 
+  local META_LOG_DEST_FILE="$REC_BFN"
+  [ -z "$META_LOG_DEST_FILE" ] || META_LOG_DEST_FILE+='.meta.jsonl'
+  exec 5<&-
+  local META_LOG_DEST_LINK='/proc/self/fd/5'
+  # Writing by file descriptor makes it so we can follow file renames.
+
   while kill -0 -- "$REC_PID" 2>/dev/null ; do
     META="$(lurkrec_metadata)"
     NOW="$EPOCHSECONDS"
+    [ -z "$META_LOG_DEST_FILE" ] || [ -f "$META_LOG_DEST_LINK" ] ||
+      exec 5>>"$META_LOG_DEST_FILE"
     if [ -z "$META" ]; then
       echo "[metadata] error! previous: $SHORT_PREV"
       META='"!"'
     elif [ "$META" == "$PREV" ]; then
       echo "[metadata] same: $SHORT_PREV"
-      [ -f "$META_LOG" ] && [ -s "$META_LOG" ] && META='"="' || true
+      # Write "=" shorthand only if the current output file already has data:
+      [ -f "$META_LOG_DEST_LINK" ] && [ -s "$META_LOG_DEST_LINK" ] &&
+        META='"="' || true
     else
       echo "[metadata] updated: $META previous: $PREV"
       PREV="$META"
       SHORT_PREV="${PREV:0:100}"
       [ "$SHORT_PREV" == "$PREV" ] || SHORT_PREV+=$'\t…'
     fi
-    [ -z "$META_LOG" ] || (
+    [ -z "$META_LOG_DEST_FILE" ] || (
       echo -ne '{\t'
       case "$META" in
         '"'?'"' ) printf '%s: %s\t}\n' "$META" "$NOW";;
         * ) printf '"@": %s,' "$NOW"; echo "${META#'{'}";;
       esac
-      ) >>"$META_LOG" || true
+      ) >&5 || true
     lurkrec_named_sleep log-helper "$INTV" || return 4$(
       echo E: $FUNCNAME: "Failed to sleep for '$INTV'" >&2)
   done
+  exec 5<&-
 }
 
 
@@ -369,14 +380,23 @@ function lurkrec_file_growth_watchdog () {
   local WATCHDOG_PID="$BASHPID"
   local TRACE="File growth watchdog (pid $WATCHDOG_PID):"
 
+  exec <"$REC_VIDEO_DEST" || return 4$(
+    echo E: $TRACE 'Failed to obtain persistent file handle!' >&2)
+  local REC_VIDEO_DEST='<BUG: mistakenly using filename instead of stdin>'
+  local REC_DEST_LINK='/proc/self/fd/0'
+  local REC_DEST_ABSDIR="$(readlink -m -- "$REC_DEST_LINK"/..)"
+  local TAPE_NAME=
+  lurkrec_file_growth_watchdog__check_tape_name || true
+
   if ! lurkrec_named_sleep watchdog-init $WATCHDOG_INIT_DELAY ; then
     echo D: $TRACE "Recorder $REC_PID vanished early."
     return 0
   fi
+  lurkrec_file_growth_watchdog__check_tape_name || true
 
   local INTV_SEC="$WATCHDOG_DEFAULT_INTV_SEC"
   local TOL_SEC="$WATCHDOG_WITH_ADS_TOL_SEC"
-  echo -n D: $TRACE "Watching $REC_VIDEO_DEST for recorder $REC_PID "
+  echo -n D: $TRACE "Watching '$TAPE_NAME' for recorder $REC_PID "
   if [ -n "$SKIP_ADS" ]; then
     echo -n 'skipping ads'
     TOL_SEC="$WATCHDOG_SKIP_ADS_TOL_SEC"
@@ -394,14 +414,15 @@ function lurkrec_file_growth_watchdog () {
   local PREV_SZ=0 SZ= DELTA=
   while lurkrec_named_sleep watchdog "$INTV_SEC"s; do
     if ! kill -0 "$REC_PID" 2>/dev/null; then
-      echo D: $TRACE "Recorder seems to have quit."
+      echo D: $TRACE 'Recorder seems to have quit.'
       return 0
     fi
-    SZ="$(stat --format %s -- "$REC_VIDEO_DEST")"
-    [ -f "$REC_VIDEO_DEST" ] || return 4$(
-      echo E: $TRACE: "File seems to have vanished: '$REC_VIDEO_DEST'" >&2)
-    [ -n "$REC_VIDEO_DEST" ] || continue$(
-      echo W: $TRACE: "Failed to detect file size of '$REC_VIDEO_DEST'" >&2)
+    lurkrec_file_growth_watchdog__check_tape_name || true
+    SZ="$(stat --dereference --format %s -- "$REC_DEST_LINK")"
+    [ -f "$REC_DEST_LINK" ] || return 4$(
+      echo E: $TRACE 'Our tape seems to have been ejected.' >&2)
+    [ -n "$SZ" ] || continue$(
+      echo W: $TRACE 'Failed to measure tape position!' >&2)
     (( DELTA = SZ - PREV_SZ ))
     if [ "$DELTA" == 0 ]; then (( STREAK += INTV_SEC )); else STREAK=0; fi
     # echo D: $TRACE "+ $DELTA = $SZ streak $STREAK / $TOL_SEC"
@@ -411,6 +432,21 @@ function lurkrec_file_growth_watchdog () {
     kill -HUP "$REC_PID"
     return 0
   done
+}
+
+
+function lurkrec_file_growth_watchdog__check_tape_name () {
+  # Unfortunately, when `stat` applies `--dereference`,
+  # it cannot print the resolved path, so we need two lookups.
+  # We check the tape name first because this observation may be helpful
+  # to debug why stat may have failed.
+  local OLD="$TAPE_NAME"
+  local UPD="$(readlink -- "$REC_DEST_LINK")"
+  UPD="${UPD#$REC_DEST_ABSDIR/}"
+  [ "$UPD" != "$OLD" ] || return 0
+  [ -z "$OLD" ] ||
+    echo D: $TRACE "Our tape has been renamed from '$OLD' to '$UPD'."
+  TAPE_NAME="$UPD"
 }
 
 
