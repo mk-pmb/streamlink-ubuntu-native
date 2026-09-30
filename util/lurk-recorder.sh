@@ -100,6 +100,7 @@ function lurkrec_named_sleep () {
     # that with `disown`, but then we couldn't `wait`. Or we could force a
     # double subshell, but that would create two heavy forks of our process.
 
+    set -e
     exec 5<&0
     [ -z "$NAMED_SLEEP_PIPE" ] || exec 5<"$NAMED_SLEEP_PIPE"
     # Usually we have the named sleeper read from stdin and make that a
@@ -285,22 +286,46 @@ function lurkrec_try_recording () {
   REC_ALIVE_PIPE="/proc/$REC_PID/fd/$REC_ALIVE_PIPE"
   local NAMED_SLEEP_PIPE="$REC_ALIVE_PIPE"
   local TRACE="Recording attempt $REC_PID:"
-
-  : >(lurkrec_metadata_log_helper)
-  local META_LOG_PID="$!"
-
-  : >(lurkrec_file_growth_watchdog)
-  local WATCHDOG_PID="$!"
-
+  local REC_HELPERS=
+  lurkrec_start_rec_helper metadata_log_helper
+  lurkrec_start_rec_helper file_growth_watchdog
   wait "$REC_PID"; local REC_RV=$?
-
-  echo D: $TRACE "Wait for watchdog to quit: pid $WATCHDOG_PID"
-  wait "$WATCHDOG_PID"
-  echo D: $TRACE "Wait for meta logger to quit: pid $META_LOG_PID"
-  wait "$META_LOG_PID"
-
+  lurkrec_wait_quit_named_pids 5 $REC_HELPERS
   echo D: $TRACE "Done, rv=$REC_RV."
   return "$REC_RV"
+}
+
+
+function lurkrec_start_rec_helper () {
+  : >(exec 7<> <(:); lurkrec_"$1")
+  REC_HELPERS+="$!=$1 "
+}
+
+
+function lurkrec_wait_quit_named_pids () {
+  local MUTE_SEC="$1"; shift
+  set -- $*
+  local H_ALIVE="$*" H_PID= H_NAME=
+  while [ -n "$H_ALIVE" ]; do
+    set -- $H_ALIVE
+    H_ALIVE=
+    while [ "$#" -ge 1 ]; do
+      H_PID="${1%%=*}"
+      H_NAME="${1#*=}"
+      shift
+      kill -0 "$H_PID" 2>/dev/null || continue
+      H_ALIVE+=" $1"
+    done
+    [ -n "$H_ALIVE" ] || break
+    if [ "$MUTE_SEC" -ge 1 ]; then
+      (( MUTE_SEC -= 1 ))
+    else
+      echo D: $TRACE "Still waiting for:$H_ALIVE"
+      wait "${H_ALIVE%%[ =]*}"
+      echo D: $TRACE "${H_ALIVE%% *}: rv=$?"
+    fi
+    sleep 1s
+  done
 }
 
 
