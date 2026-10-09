@@ -395,7 +395,7 @@ function lurkrec_metadata_log_helper () {
       esac
       ) >&5 || true
     lurkrec_named_sleep log-helper "$INTV" || return 4$(
-      echo E: $FUNCNAME: "Failed to sleep for '$INTV'" >&2)
+      echo E: $FUNCNAME: "Failed to sleep for '$INTV', rv=$?" >&2)
   done
   exec 5<&-
 }
