@@ -6,7 +6,13 @@
 
 
 # Auto-generated files:
-/help.txt
+/tmp.*
+/venv
+
+
+
+# Host-specific files
+/*.@*
 
 
 
