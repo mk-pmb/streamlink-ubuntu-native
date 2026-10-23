@@ -62,6 +62,7 @@ function lurkrec_cli_main () {
   local BUFSZ=4K
   local QUALI="${LURKREC_QUALI:-360p30,360p,worst}"
   local REC_VIDEO_SUFFIX='.ts'
+  local META_LOG_DEST_SUFFIX='.meta.jsonl'
   local SKIP_ADS= # Option --twitch-disable-ads has been disabled anyway.
   local WATCHDOG_WITH_ADS_TOL_SEC=30
   local WATCHDOG_SKIP_ADS_TOL_SEC=$(( 8 * 60 ))
@@ -270,9 +271,23 @@ function lurkrec_check_weekdays_option () {
 
 function lurkrec_try_recording () {
   lurkrec_check_weekdays_option || return $?
-  local REC_BFN=
-  printf -v REC_BFN -- '%s/%(%y%m%d-%H%M%S)T.rec' "$SUBDIR" "$CHECK_UTS"
-  REC_VIDEO_DEST="$REC_BFN$REC_VIDEO_SUFFIX"
+
+  # When running in a timezone where the clock can jump backwards
+  # (e.g. duplicate DST hour in autumn in TZ=Europe/Berlin),
+  # timestamp-based filenames may collide. That would cause data loss
+  # on the existing recording, so we have to avoid such collision.
+  local REC_BFN= VAL=
+  printf -v VAL -- '%s/%(%y%m%d-%H%M%S)T.rec' "$SUBDIR" "$CHECK_UTS"
+  REC_BFN="$VAL"
+  while true; do
+    REC_VIDEO_DEST="$REC_BFN$REC_VIDEO_SUFFIX"
+    [ -f "$REC_VIDEO_DEST" ] ||
+      [ -f "$REC_BFN$META_LOG_DEST_SUFFIX" ] ||
+      break
+    # Since we can only know REC_PID later, for now we have to stick with
+    # MAIN_PID. Users won't care. Good enough for this rare occasion.
+    REC_BFN="$VAL.$MAIN_PID-$RANDOM"
+  done
   echo D: "${REC_CMD[*]} >'$REC_VIDEO_DEST'"
   local REC_ALIVE_PIPE=4
   >"$REC_VIDEO_DEST" || return $?$(
@@ -363,7 +378,7 @@ function lurkrec_metadata_log_helper () {
   local SHORT_PREV="$PREV"
 
   local META_LOG_DEST_FILE="$REC_BFN"
-  [ -z "$META_LOG_DEST_FILE" ] || META_LOG_DEST_FILE+='.meta.jsonl'
+  [ -z "$META_LOG_DEST_FILE" ] || META_LOG_DEST_FILE+="$META_LOG_DEST_SUFFIX"
   exec 5<&-
   local META_LOG_DEST_LINK='/proc/self/fd/5'
   # Writing by file descriptor makes it so we can follow file renames.
